@@ -1,0 +1,53 @@
+# ── Python ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.spec
+
+# ── Virtual environments ─────────────────────────────────────
+fedaida_env/
+venv/
+.venv/
+env/
+ENV/
+
+# ── Model weights & results ──────────────────────────────────
+saved_models/
+results/
+logs/
+*.h5
+*.weights.h5
+*.pkl
+
+# ── Datasets (too large for git) ─────────────────────────────
+datasets/nsl_kdd/*.txt
+datasets/nsl_kdd/*.csv
+datasets/cicids2017/*.csv
+datasets/bot_iot/*.csv
+datasets/**/*.pcap
+
+# ── Jupyter ──────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── IDE ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── wandb / MLflow logs ──────────────────────────────────────
+wandb/
+mlruns/

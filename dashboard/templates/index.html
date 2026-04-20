@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FedAIDA-IDS — Real-Time Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; font-size:13px; }
+
+/* ── Top bar ── */
+.topbar { background:#162035; padding:10px 20px; display:flex; align-items:center;
+          justify-content:space-between; border-bottom:2px solid #1565C0; }
+.topbar h1 { font-size:18px; color:#1E88E5; letter-spacing:1px; }
+.topbar .meta { color:#90A4AE; font-size:11px; }
+.status-dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+              margin-right:6px; }
+.dot-green { background:#43A047; animation:pulse 1.5s infinite; }
+.dot-red   { background:#E53935; }
+.dot-yellow{ background:#FB8C00; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ── Grid ── */
+.grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;
+        padding:12px; }
+.card { background:#162035; border:1px solid #1e3a5f; border-radius:6px;
+        padding:12px; }
+.card h3 { color:#1E88E5; font-size:12px; letter-spacing:1px;
+           text-transform:uppercase; margin-bottom:10px;
+           padding-bottom:6px; border-bottom:1px solid #1e3a5f; }
+
+/* ── Stat boxes ── */
+.stats-row { display:flex; gap:10px; padding:0 12px 12px; }
+.stat-box  { flex:1; background:#162035; border:1px solid #1e3a5f;
+             border-radius:6px; padding:12px; text-align:center; }
+.stat-box .val { font-size:28px; font-weight:bold; color:#1E88E5; }
+.stat-box .lbl { font-size:10px; color:#90A4AE; margin-top:4px; text-transform:uppercase; }
+
+/* ── Alert table ── */
+.alert-table { width:100%; border-collapse:collapse; font-size:11px; }
+.alert-table th { background:#1a2d4a; color:#90A4AE; padding:6px 8px;
+                  text-align:left; position:sticky; top:0; }
+.alert-table td { padding:5px 8px; border-bottom:1px solid #1a2d4a; }
+.alert-row-high   { background:rgba(183,28,28,0.15); }
+.alert-row-medium { background:rgba(230,81,0,0.12); }
+.alert-row-low    { background:rgba(21,101,192,0.10); }
+.badge { display:inline-block; padding:1px 6px; border-radius:3px;
+         font-size:10px; font-weight:bold; }
+.badge-high   { background:#b71c1c; color:#fff; }
+.badge-medium { background:#e65100; color:#fff; }
+.badge-low    { background:#1565C0; color:#fff; }
+.badge-blocked{ background:#6a1b9a; color:#fff; }
+.badge-benign { background:#1b5e20; color:#fff; }
+#alert-container { max-height:320px; overflow-y:auto; }
+
+/* ── Node grid ── */
+.node-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.node-card { background:#0f1a2e; border-radius:5px; padding:8px;
+             border:1px solid #1e3a5f; text-align:center; }
+.node-card .node-id { font-size:10px; color:#90A4AE; }
+.node-card .trust-val { font-size:18px; font-weight:bold; }
+.node-card .trust-bar-bg { background:#1a2d4a; height:4px;
+                            border-radius:2px; margin-top:4px; }
+.node-card .trust-bar    { height:4px; border-radius:2px; transition:width 0.5s; }
+.trust-green { color:#43A047; }
+.trust-yellow{ color:#FB8C00; }
+.trust-red   { color:#E53935; }
+.quarantine-badge { font-size:9px; background:#6a1b9a; color:#fff;
+                     padding:1px 5px; border-radius:3px; display:block;
+                     margin-top:3px; }
+
+/* ── FL progress ── */
+#fl-round-val   { font-size:24px; font-weight:bold; color:#1E88E5; }
+#fl-f1-val      { font-size:24px; font-weight:bold; color:#43A047; }
+#fl-status-msg  { color:#90A4AE; font-size:11px; margin-top:4px; }
+
+/* ── Blocked IPs ── */
+.blocked-entry { display:flex; justify-content:space-between;
+                 align-items:center; padding:5px 0;
+                 border-bottom:1px solid #1a2d4a; }
+.blocked-entry .ip  { font-family:monospace; color:#ef9a9a; font-size:12px; }
+.blocked-entry .unblock-btn {
+  background:#6a1b9a; color:#fff; border:none; border-radius:3px;
+  padding:2px 8px; cursor:pointer; font-size:10px; }
+.blocked-entry .unblock-btn:hover { background:#9c27b0; }
+#unblock-all-btn {
+  background:#1565C0; color:#fff; border:none; border-radius:4px;
+  padding:5px 12px; cursor:pointer; font-size:11px; margin-top:8px;
+  width:100%; }
+
+/* ── Controls ── */
+.controls { display:flex; gap:8px; flex-wrap:wrap; padding:0 12px 12px; }
+.btn { padding:7px 16px; border-radius:4px; border:none; cursor:pointer;
+       font-size:12px; font-weight:bold; }
+.btn-start  { background:#1565C0; color:#fff; }
+.btn-stop   { background:#C62828; color:#fff; }
+.btn-demo   { background:#2E7D32; color:#fff; }
+.btn-attack { background:#E65100; color:#fff; }
+.btn-load   { background:#4A148C; color:#fff; }
+
+/* ── Fuzzy rule display ── */
+.fuzzy-rule { font-family:monospace; font-size:10px; color:#80CBC4;
+              background:#0d1e35; padding:4px 8px; border-radius:3px;
+              border-left:3px solid #00897B; margin-top:3px;
+              word-break:break-all; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width:5px; }
+::-webkit-scrollbar-track { background:#0f1a2e; }
+::-webkit-scrollbar-thumb { background:#1e3a5f; border-radius:3px; }
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <div>
+    <h1>⚡ FedAIDA-IDS — Real-Time Intrusion Detection</h1>
+    <div class="meta">Federated Self-Learning Neuro-Fuzzy IDS for IoT Networks</div>
+  </div>
+  <div style="text-align:right">
+    <span class="status-dot dot-red" id="monitor-dot"></span>
+    <span id="monitor-status">Monitoring Inactive</span>
+    &nbsp;|&nbsp;
+    <span id="model-status" style="color:#FB8C00">Model Not Loaded</span>
+    &nbsp;|&nbsp;
+    <span id="clock" style="color:#90A4AE"></span>
+  </div>
+</div>
+
+<!-- Controls -->
+<div class="controls" style="padding:10px 12px 0;">
+  <button class="btn btn-load"   onclick="loadModel()">📦 Load Model</button>
+  <button class="btn btn-start"  onclick="startMonitoring()">▶ Start Monitoring</button>
+  <button class="btn btn-stop"   onclick="stopMonitoring()">⏹ Stop</button>
+  <button class="btn btn-attack" onclick="simulateAttack('PortScan')">🔴 Simulate PortScan</button>
+  <button class="btn btn-attack" onclick="simulateAttack('DDoS')" style="background:#7B1FA2">🔴 Simulate DDoS</button>
+  <button class="btn btn-demo"   onclick="simulateAttack('Reconnaissance')">🟡 Simulate Recon</button>
+</div>
+
+<!-- Stats Row -->
+<div class="stats-row" style="margin-top:10px;">
+  <div class="stat-box">
+    <div class="val" id="stat-flows">0</div>
+    <div class="lbl">Flows Analysed</div>
+  </div>
+  <div class="stat-box">
+    <div class="val" id="stat-alerts" style="color:#E53935;">0</div>
+    <div class="lbl">Alerts Raised</div>
+  </div>
+  <div class="stat-box">
+    <div class="val" id="stat-blocked" style="color:#7B1FA2;">0</div>
+    <div class="lbl">IPs Blocked</div>
+  </div>
+  <div class="stat-box">
+    <div class="val" id="fl-round-val">0</div>
+    <div class="lbl">FL Round</div>
+  </div>
+  <div class="stat-box">
+    <div class="val" id="fl-f1-val">—</div>
+    <div class="lbl">Global F1</div>
+  </div>
+</div>
+
+<!-- Main Grid -->
+<div class="grid">
+
+  <!-- Alert Feed — spans 2 columns -->
+  <div class="card" style="grid-column:span 2;">
+    <h3>🔴 Live Alert Feed</h3>
+    <div id="alert-container">
+      <table class="alert-table">
+        <thead>
+          <tr>
+            <th>#</th><th>Time</th><th>Source IP</th>
+            <th>Attack Type</th><th>Confidence</th>
+            <th>Severity</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="alert-tbody">
+          <tr><td colspan="7" style="text-align:center;color:#546E7A;padding:20px;">
+            No alerts yet — start monitoring
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="last-rule" class="fuzzy-rule" style="margin-top:8px;">
+      Fuzzy rule will appear here when an attack is detected
+    </div>
+  </div>
+
+  <!-- Node Trust Scores -->
+  <div class="card">
+    <h3>🛡 Node Trust Scores (IRBA)</h3>
+    <div class="node-grid" id="node-grid">
+      <!-- Filled by JS -->
+    </div>
+    <div id="fl-status-msg" style="margin-top:8px;"></div>
+  </div>
+
+  <!-- Blocked IPs -->
+  <div class="card">
+    <h3>🚫 Blocked IPs</h3>
+    <div id="blocked-list" style="max-height:200px;overflow-y:auto;">
+      <div style="color:#546E7A;text-align:center;padding:20px;">No IPs blocked</div>
+    </div>
+    <button id="unblock-all-btn" onclick="unblockAll()">Unblock All</button>
+  </div>
+
+  <!-- Attack Distribution -->
+  <div class="card">
+    <h3>📊 Attack Distribution</h3>
+    <div id="attack-dist" style="font-size:12px;"></div>
+  </div>
+
+  <!-- FL Progress -->
+  <div class="card">
+    <h3>🔗 Federated Learning Status</h3>
+    <div style="display:flex;gap:16px;align-items:center;margin-bottom:10px;">
+      <div>
+        <div id="fl-round-display" style="font-size:32px;font-weight:bold;color:#1E88E5;">0</div>
+        <div style="color:#90A4AE;font-size:10px;">CURRENT ROUND</div>
+      </div>
+      <div>
+        <div id="fl-f1-display" style="font-size:32px;font-weight:bold;color:#43A047;">—</div>
+        <div style="color:#90A4AE;font-size:10px;">AVG F1 SCORE</div>
+      </div>
+    </div>
+    <div id="drift-nodes" style="font-size:11px;color:#FB8C00;"></div>
+    <div id="quarantine-nodes" style="font-size:11px;color:#E53935;margin-top:4px;"></div>
+  </div>
+
+</div>
+
+<script>
+const socket = io();
+let alertCount = 0;
+let blockedIPs = {};
+
+// Clock
+setInterval(() => {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString();
+}, 1000);
+
+// Init node grid
+function initNodes(trustScores, quarantined) {
+  const grid = document.getElementById('node-grid');
+  grid.innerHTML = '';
+  trustScores.forEach((t, i) => {
+    const isQ   = quarantined.includes(i);
+    const tPct  = Math.round(t * 100);
+    const color = t > 0.6 ? '#43A047' : t > 0.3 ? '#FB8C00' : '#E53935';
+    const cls   = t > 0.6 ? 'trust-green' : t > 0.3 ? 'trust-yellow' : 'trust-red';
+    grid.innerHTML += `
+      <div class="node-card" id="node-${i}">
+        <div class="node-id">Node ${i}</div>
+        <div class="trust-val ${cls}">${tPct}%</div>
+        <div class="trust-bar-bg">
+          <div class="trust-bar" style="width:${tPct}%;background:${color};"></div>
+        </div>
+        ${isQ ? '<span class="quarantine-badge">⚠ QUARANTINED</span>' : ''}
+      </div>`;
+  });
+}
+
+// Socket events
+socket.on('connect', () => console.log('Dashboard connected'));
+
+socket.on('initial_state', d => {
+  initNodes(d.trust_scores || [], d.quarantined || []);
+  document.getElementById('fl-round-val').textContent      = d.fl_round || 0;
+  document.getElementById('fl-round-display').textContent  = d.fl_round || 0;
+  if (d.model_loaded) {
+    document.getElementById('model-status').textContent = '✅ Model Loaded';
+    document.getElementById('model-status').style.color = '#43A047';
+  }
+});
+
+socket.on('new_alert', alert => {
+  alertCount++;
+  document.getElementById('stat-alerts').textContent  = alertCount;
+
+  const row   = document.createElement('tr');
+  const sev   = alert.severity || 'LOW';
+  row.className = `alert-row-${sev.toLowerCase()}`;
+  const blocked = alert.blocked
+    ? '<span class="badge badge-blocked">BLOCKED</span>'
+    : '<span class="badge badge-low">ALERT</span>';
+  row.innerHTML = `
+    <td>${alert.id}</td>
+    <td>${new Date(alert.timestamp).toLocaleTimeString()}</td>
+    <td style="font-family:monospace">${alert.src_ip}</td>
+    <td><b>${alert.attack_type}</b></td>
+    <td>${(alert.confidence*100).toFixed(1)}%</td>
+    <td><span class="badge badge-${sev.toLowerCase()}">${sev}</span></td>
+    <td>${blocked}</td>`;
+
+  const tbody = document.getElementById('alert-tbody');
+  // Clear placeholder
+  if (tbody.querySelector('td[colspan]')) tbody.innerHTML = '';
+  tbody.prepend(row);
+
+  // Show fuzzy rule
+  if (alert.fuzzy_rule) {
+    document.getElementById('last-rule').textContent = alert.fuzzy_rule;
+  }
+
+  // Flash row
+  row.style.background = 'rgba(229,57,53,0.3)';
+  setTimeout(() => { row.style.background = ''; }, 800);
+});
+
+socket.on('ip_blocked', d => {
+  blockedIPs[d.ip] = d;
+  renderBlocked();
+  document.getElementById('stat-blocked').textContent = Object.keys(blockedIPs).length;
+});
+
+socket.on('ip_unblocked', d => {
+  delete blockedIPs[d.ip];
+  renderBlocked();
+  document.getElementById('stat-blocked').textContent = Object.keys(blockedIPs).length;
+});
+
+socket.on('all_unblocked', () => {
+  blockedIPs = {};
+  renderBlocked();
+  document.getElementById('stat-blocked').textContent = 0;
+});
+
+socket.on('fl_update', d => {
+  document.getElementById('fl-round-val').textContent     = d.round;
+  document.getElementById('fl-round-display').textContent = d.round;
+  if (d.avg_f1) {
+    const f1str = (d.avg_f1).toFixed(4);
+    document.getElementById('fl-f1-val').textContent     = f1str;
+    document.getElementById('fl-f1-display').textContent = f1str;
+  }
+  if (d.trust_scores) initNodes(d.trust_scores, d.quarantined || []);
+  if (d.drift_nodes && d.drift_nodes.length > 0) {
+    document.getElementById('drift-nodes').textContent =
+      '⚡ Drift detected on nodes: ' + d.drift_nodes.join(', ');
+  }
+  if (d.quarantined && d.quarantined.length > 0) {
+    document.getElementById('quarantine-nodes').textContent =
+      '⚠ Quarantined nodes: ' + d.quarantined.join(', ');
+  }
+});
+
+socket.on('monitoring_status', d => {
+  const dot    = document.getElementById('monitor-dot');
+  const status = document.getElementById('monitor-status');
+  if (d.active) {
+    dot.className    = 'status-dot dot-green';
+    status.textContent = 'Monitoring Active';
+  } else {
+    dot.className    = 'status-dot dot-red';
+    status.textContent = 'Monitoring Inactive';
+  }
+});
+
+socket.on('flow_stats', d => {
+  document.getElementById('stat-flows').textContent = d.flows_seen;
+  // Attack distribution
+  const dist = d.attack_dist || {};
+  const html = Object.entries(dist)
+    .sort((a,b) => b[1]-a[1])
+    .map(([name, count]) =>
+      `<div style="display:flex;justify-content:space-between;padding:3px 0;
+                   border-bottom:1px solid #1a2d4a;">
+         <span>${name}</span>
+         <span style="color:#1E88E5;font-weight:bold;">${count}</span>
+       </div>`)
+    .join('');
+  document.getElementById('attack-dist').innerHTML = html || '<div style="color:#546E7A">No attacks yet</div>';
+});
+
+socket.on('model_status', d => {
+  if (d.loaded) {
+    document.getElementById('model-status').textContent = '✅ Model Loaded';
+    document.getElementById('model-status').style.color = '#43A047';
+  }
+});
+
+// Render blocked IPs
+function renderBlocked() {
+  const el = document.getElementById('blocked-list');
+  if (Object.keys(blockedIPs).length === 0) {
+    el.innerHTML = '<div style="color:#546E7A;text-align:center;padding:20px;">No IPs blocked</div>';
+    return;
+  }
+  el.innerHTML = Object.entries(blockedIPs).map(([ip, d]) => `
+    <div class="blocked-entry">
+      <div>
+        <span class="ip">${ip}</span>
+        <span style="color:#90A4AE;font-size:10px;display:block">${d.attack_type} — ${(d.confidence*100).toFixed(1)}%</span>
+      </div>
+      <button class="unblock-btn" onclick="unblockIP('${ip}')">Unblock</button>
+    </div>`).join('');
+}
+
+// Actions
+function startMonitoring() { socket.emit('start_monitoring', {}); }
+function stopMonitoring()   { socket.emit('stop_monitoring',  {}); }
+
+function loadModel() {
+  fetch('/api/load_model', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({dataset:'botiot', n_classes:6})
+  }).then(r=>r.json()).then(d => alert(d.message));
+}
+
+function simulateAttack(type) {
+  fetch('/api/simulate_attack', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({type, src_ip:'192.168.1.' + Math.floor(Math.random()*200+10)})
+  });
+}
+
+function unblockIP(ip) {
+  fetch('/api/unblock/' + ip, {method:'POST'});
+}
+
+function unblockAll() {
+  fetch('/api/unblock_all', {method:'POST'});
+}
+
+// Init nodes on load
+initNodes(Array(9).fill(0.5), []);
+</script>
+</body>
+</html>
