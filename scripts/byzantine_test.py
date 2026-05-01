@@ -87,8 +87,25 @@ def run_byzantine_experiment(node_seqs, test_data, n_features, n_classes,
     global_weights_irba = build_fedaida_model(
         n_features=n_features, seq_len=seq_len, n_classes=n_classes).get_weights()
 
+    # Small clean validation subset for coverage scoring
+    def _val_subset(X, y, per_class=40):
+        if len(X) == 0:
+            return X, y
+        idx = []
+        for c in range(n_classes):
+            c_idx = np.where(y == c)[0]
+            if len(c_idx) > 0:
+                idx.extend(c_idx[: min(per_class, len(c_idx))].tolist())
+        idx = np.array(idx, dtype=int)
+        np.random.shuffle(idx)
+        return X[idx], y[idx]
+
+    X_te, y_te = test_data
+    val_X, val_y = _val_subset(X_te, y_te, per_class=40)
+
     for rnd in range(1, n_rounds + 1):
         all_w = {}; all_n = {}
+        local_models = {}
         for nid, (Xn, yn) in enumerate(node_seqs):
             if len(Xn) < 2: continue
             m = build_fedaida_model(
@@ -101,11 +118,36 @@ def run_byzantine_experiment(node_seqs, test_data, n_features, n_classes,
                 w = [-wi for wi in w]  # poisoned
             all_w[nid] = w
             all_n[nid] = len(yn[:split])
+            local_models[nid] = m
 
         # Update trust scores
         for nid, w in all_w.items():
-            if w[0] is not None:
-                irba.update_trust(nid, w[0], {k: v[0] for k, v in all_w.items()})
+            if not w:
+                continue
+            # Coverage trust: fraction of classes detected with ≥0.5 accuracy
+            coverage_score = None
+            try:
+                if len(val_X) > 0 and nid in local_models:
+                    preds = np.argmax(local_models[nid].predict(val_X, verbose=0), axis=1)
+                    detected = 0
+                    for c in range(n_classes):
+                        idx = np.where(val_y == c)[0]
+                        if len(idx) == 0:
+                            continue
+                        if float(np.mean(preds[idx] == c)) >= 0.5:
+                            detected += 1
+                    coverage_score = detected / float(n_classes)
+            except Exception:
+                coverage_score = None
+
+            # Flatten all layers for cosine similarity
+            flat = np.concatenate([np.asarray(a).ravel() for a in w]).astype(np.float32)
+            all_updates = {
+                k: np.concatenate([np.asarray(a).ravel() for a in v]).astype(np.float32)
+                for k, v in all_w.items()
+                if v
+            }
+            irba.update_trust(nid, flat, all_updates, coverage_score=coverage_score)
 
         # Trust-weighted aggregate
         agg = irba.aggregate(all_w, all_n)

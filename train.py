@@ -20,7 +20,7 @@ sys.path.insert(0, BASE_DIR)
 
 from config import *
 from data.preprocess import prepare_all
-from model.fedaida_model import build_fedaida_model, FedAIDAExplainable
+from model.fedaida_model import build_fedaida_model
 from federation.irba import IRBATrustScorer
 from federation.client import FedAIDAClient
 from drift.adwin_detector import FederatedDriftCoordinator, simulate_concept_drift
@@ -239,6 +239,8 @@ def main():
     parser.add_argument('--rounds',     type=int,  default=FL_ROUNDS)
     parser.add_argument('--nodes',      type=int,  default=NUM_NODES)
     parser.add_argument('--epochs',     type=int,  default=LOCAL_EPOCHS)
+    parser.add_argument('--centralized', action='store_true',
+                        help='Run centralized (non-federated) baseline training')
     parser.add_argument('--byzantine',  action='store_true',
                         help='Simulate Byzantine attack (first 2 nodes)')
     parser.add_argument('--drift_test', action='store_true',
@@ -271,9 +273,29 @@ def main():
     logger.info(f"n_features={n_features} | n_classes={n_classes} | "
                 f"seq_len={SEQUENCE_LEN} | label_names={label_names}")
 
+    if args.centralized:
+        logger.info("\n[CENTRALIZED BASELINE] Training on pooled data...")
+        X_train_all = np.vstack([x for x, _ in node_seqs if len(x) > 0])
+        y_train_all = np.hstack([y for _, y in node_seqs if len(y) > 0])
+        model = build_fedaida_model(n_features=n_features, seq_len=SEQUENCE_LEN, n_classes=n_classes)
+        model.fit(X_train_all, y_train_all, epochs=MAX_EPOCHS, batch_size=BATCH_SIZE, verbose=1)
+        X_te, y_te = test_data
+        if len(X_te) > 0:
+            metrics = evaluate_model(
+                model, X_te, y_te,
+                class_names=label_names,
+                save_dir=PLOTS_DIR,
+                dataset_name=f"{args.dataset}_centralized",
+            )
+            with open(os.path.join(METRICS_DIR, 'centralized_metrics.json'), 'w') as f:
+                json.dump(metrics, f, indent=2)
+        model.save_weights(os.path.join(MODELS_DIR, f'centralized_{args.dataset}.weights.h5'))
+        logger.info("[CENTRALIZED BASELINE] Done.")
+        return
+
     if args.eval_only:
         logger.info("\n[EVAL ONLY] Loading saved model...")
-        model = build_fedaida_model(SEQUENCE_LEN, n_features, n_classes)
+        model = build_fedaida_model(n_features=n_features, seq_len=SEQUENCE_LEN, n_classes=n_classes)
         weights_path = os.path.join(MODELS_DIR, 'best_global_model.weights.h5')
         if os.path.exists(weights_path):
             model.load_weights(weights_path)
@@ -337,23 +359,74 @@ def main():
         X_node, y_node = node_seqs[0]
         if len(X_node) > 20:
             X_drift, y_drift, drift_idx = simulate_concept_drift(X_node, y_node)
-            drift_model = build_fedaida_model(SEQUENCE_LEN, n_features, n_classes)
+            drift_model = build_fedaida_model(
+                n_features=n_features, seq_len=SEQUENCE_LEN, n_classes=n_classes
+            )
             drift_model.set_weights(sim.global_weights)
             monitor = sim.drift_coord.monitors[0]
-            # Simulate streaming
+
+            # Evaluate baseline on pre-drift segment
+            from sklearn.metrics import f1_score as sk_f1
+            pre_end = max(int(drift_idx), 1)
+            X_pre, y_pre = X_drift[:pre_end], y_drift[:pre_end]
+            X_post, y_post = X_drift[pre_end:], y_drift[pre_end:]
+            if len(X_pre) > 0:
+                preds_pre = np.argmax(drift_model.predict(X_pre, verbose=0), axis=1)
+                pre_f1 = float(sk_f1(y_pre, preds_pre, average="macro", zero_division=0))
+            else:
+                pre_f1 = float(final_metrics.get("macro_f1", 0.0)) if len(X_te) > 0 else 0.0
+
+            # Simulate adaptation in FL-like rounds: train briefly on post-drift data
             drift_f1_trace = []
-            pre_f1 = final_metrics.get('macro_f1', 0.0) if len(X_te) > 0 else 0.0
-            for i in range(0, min(len(y_drift), 200), 10):
-                batch = X_drift[i:i+10]
-                true  = y_drift[i:i+10]
-                preds = np.argmax(drift_model.predict(batch, verbose=0), axis=1)
-                monitor.update_batch(preds, true)
-                from sklearn.metrics import f1_score as sk_f1
-                f1_b = sk_f1(true, preds, average='macro', zero_division=0)
-                drift_f1_trace.append(float(f1_b))
-            plot_drift_recovery(pre_f1, drift_f1_trace, PLOTS_DIR,
-                                drift_round=drift_idx // 10)
-            logger.info("Drift experiment complete")
+            recovery_round = None
+            n_rounds_adapt = max(1, int(DRIFT_FL_ROUNDS))
+            # Use a small rolling window to emulate local streaming
+            step = max(10, min(200, len(y_post) // max(1, n_rounds_adapt)))
+            for r in range(1, n_rounds_adapt + 1):
+                start = (r - 1) * step
+                end = min(start + step, len(y_post))
+                if start >= end:
+                    break
+                X_batch, y_batch = X_post[start:end], y_post[start:end]
+
+                # ADWIN update on error stream
+                preds_b = np.argmax(drift_model.predict(X_batch, verbose=0), axis=1)
+                drift_now = bool(monitor.update_batch(preds_b, y_batch))
+                if drift_now:
+                    # Re-learn fuzzy rules (ANFIS) quickly
+                    try:
+                        anfis = drift_model.get_layer("anfis")
+                        for w in anfis.trainable_variables:
+                            w.assign(tf.random.normal(w.shape, stddev=0.1))
+                    except Exception:
+                        pass
+
+                # One short adaptation epoch on post-drift batch
+                drift_model.fit(X_batch, y_batch, epochs=1, batch_size=BATCH_SIZE, verbose=0)
+
+                # Evaluate on a held-out slice of post-drift data
+                eval_end = min(len(y_post), end + step)
+                X_eval, y_eval = X_post[end:eval_end], y_post[end:eval_end]
+                if len(X_eval) == 0:
+                    X_eval, y_eval = X_batch, y_batch
+                preds_eval = np.argmax(drift_model.predict(X_eval, verbose=0), axis=1)
+                f1_r = float(sk_f1(y_eval, preds_eval, average="macro", zero_division=0))
+                drift_f1_trace.append(f1_r)
+
+                # Recovery: within 0.02 absolute of pre-drift F1
+                if recovery_round is None and f1_r >= (pre_f1 - 0.02):
+                    recovery_round = r
+
+            plot_drift_recovery(pre_f1, drift_f1_trace, PLOTS_DIR, drift_round=0)
+            drift_metrics = {
+                "pre_drift_f1": round(pre_f1, 4),
+                "post_drift_f1_trace": [round(float(x), 4) for x in drift_f1_trace],
+                "recovery_round": recovery_round,
+                "target_recovery_rounds": 4,
+            }
+            with open(os.path.join(METRICS_DIR, "drift_recovery_metrics.json"), "w") as f:
+                json.dump(drift_metrics, f, indent=2)
+            logger.info(f"Drift experiment complete | recovery_round={recovery_round}")
 
     if args.multi_seed:
         logger.info("\nRunning Multi-Seed Evaluation (5 seeds)...")

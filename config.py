@@ -5,7 +5,7 @@ DATASET_PATHS = {
         "train": os.path.join(BASE_DIR, "datasets/nsl_kdd/KDDTrain+.txt"),
         "test":  os.path.join(BASE_DIR, "datasets/nsl_kdd/KDDTest+.txt"),
     },
-    "cicids":   {"dir": os.path.join(BASE_DIR, "datasets/cicids2017/")},
+    "cicids":   {"dir": os.path.join(BASE_DIR, "datasets/cicids2018/")},
     "bot_iot":  {"dir": os.path.join(BASE_DIR, "datasets/bot_iot/")},
 }
 RESULTS_DIR  = os.path.join(BASE_DIR, "results")

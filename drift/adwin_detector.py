@@ -14,6 +14,7 @@ class DriftMonitor:
         self.drift_count = 0
         self.error_history = []
         self.drift_timestamps = []
+        self._last_drift = False
 
     def update(self, prediction, true_label):
         error = 1.0 if int(prediction) != int(true_label) else 0.0
@@ -21,6 +22,7 @@ class DriftMonitor:
         self.detector.update(error)
         self.counter += 1
         if self.detector.drift_detected:
+            self._last_drift = True
             self.drift_count += 1
             self.drift_timestamps.append(time.time())
             logger.warning(f"[Node {self.node_id}] DRIFT DETECTED #{self.drift_count} at sample {self.counter}")
@@ -28,6 +30,7 @@ class DriftMonitor:
             if self.callback:
                 self.callback(node_id=self.node_id, drift_count=self.drift_count)
             return True
+        self._last_drift = False
         return False
 
     def update_batch(self, predictions, true_labels):
@@ -35,6 +38,13 @@ class DriftMonitor:
         preds = predictions if hasattr(predictions, '__iter__') else [predictions]
         labels = true_labels if hasattr(true_labels, '__iter__') else [true_labels]
         return any(self.update(p, t) for p, t in zip(preds, labels))
+
+    def is_drifting(self):
+        """
+        Compatibility helper for callers.
+        Returns whether drift was detected on the most recent update.
+        """
+        return bool(self._last_drift)
 
     def get_recent_error_rate(self, window=100):
         recent = self.error_history[-window:]

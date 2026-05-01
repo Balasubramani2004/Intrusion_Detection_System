@@ -12,6 +12,30 @@ from imblearn.over_sampling import SMOTE
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def _maybe_extract_flows_from_pcaps(data_dir: str) -> None:
+    """
+    If the dataset directory contains PCAP/PCAPNG files but no CSVs,
+    attempt to generate flow-feature CSVs using `data.pcap_to_flow`.
+    """
+    csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
+    if csv_files:
+        return
+    pcap_files = glob.glob(os.path.join(data_dir, "*.pcap")) + glob.glob(os.path.join(data_dir, "*.pcapng"))
+    if not pcap_files:
+        return
+    try:
+        from data.pcap_to_flow import extract_directory
+        out_dir = os.path.join(data_dir, "extracted_csv")
+        logger.info(f"No CSVs found; extracting flows from PCAPs → {out_dir}")
+        res = extract_directory(data_dir, out_dir, backend="auto")
+        logger.info(f"Flow extraction backend={res.backend}, csv_count={len(res.outputs)}")
+    except Exception as e:
+        logger.warning(
+            "PCAPs found but flow extraction failed. "
+            "Either install `cicflowmeter` CLI or set CICFLOWMETER_JAR.\n"
+            f"Error: {e}"
+        )
+
 
 # ── NSL-KDD ──────────────────────────────────────────────────
 def load_nslkdd(train_path, test_path, label_map, cols, cat_cols):
@@ -59,7 +83,11 @@ CICIDS_LABEL_NAMES = ['Benign', 'DoS/DDoS', 'PortScan', 'BruteForce', 'Infiltrat
 
 def load_cicids(data_dir):
     logger.info("Loading CICIDS2017 dataset...")
+    _maybe_extract_flows_from_pcaps(data_dir)
     csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
+    if not csv_files:
+        # allow extracted subdir convention
+        csv_files = glob.glob(os.path.join(data_dir, "extracted_csv", "*.csv"))
     if not csv_files:
         raise FileNotFoundError(f"No CSV files in {data_dir}")
 
@@ -98,7 +126,10 @@ BOTIOT_LABEL_NAMES = ['Normal', 'DDoS', 'DoS', 'Reconnaissance', 'Theft']
 
 def load_botiot(data_dir):
     logger.info("Loading Bot-IoT dataset...")
+    _maybe_extract_flows_from_pcaps(data_dir)
     csv_files = sorted(glob.glob(os.path.join(data_dir, "*.csv")))[:5]
+    if not csv_files:
+        csv_files = sorted(glob.glob(os.path.join(data_dir, "extracted_csv", "*.csv")))[:5]
     if not csv_files:
         raise FileNotFoundError(f"No CSV files in {data_dir}")
 

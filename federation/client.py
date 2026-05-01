@@ -64,13 +64,6 @@ class FedAIDAClient(fl.client.NumPyClient):
         # Set global model weights
         set_model_weights(self.model, parameters)
 
-        # ── Pre-check drift ───────────────────────────────
-        pre_drift = self._check_drift()
-        if pre_drift:
-            print(f"  [Client {self.node_id}] Drift detected before training — "
-                  f"resetting local adaptation layers")
-            self._reset_anfis_weights()
-
         # ── Local training ────────────────────────────────
         history = self.model.fit(
             self.X_train, self.y_train,
@@ -80,18 +73,34 @@ class FedAIDAClient(fl.client.NumPyClient):
             verbose=0
         )
 
-        # ── Post-training drift update ────────────────────
-        val_loss = history.history.get('val_loss', [0])[-1]
-        # ADWINDriftDetector (DriftMonitor) uses update(pred, true) not update(loss)
-        # Use validation loss as a proxy error signal: 1.0 = high error, 0.0 = low
-        error_signal = min(float(val_loss), 1.0)
-        self.drift_detector.update(
-            prediction=int(error_signal > 0.5),
-            true_label=0  # baseline: expect low error
-        )
-        drift_detected = self.drift_detector.drift_count > 0
-        if drift_detected:
-            self.drift_count += 1
+        # ── Post-training drift update (ADWIN on real error stream) ───────
+        val_loss = float(history.history.get('val_loss', [0.0])[-1])
+        drift_detected = False
+        coverage_score = None
+        if len(self.X_val) > 0:
+            logits_val = self.model(self.X_val, training=False).numpy()
+            preds_val = np.argmax(logits_val, axis=1)
+            # Feed per-sample 0/1 error into ADWIN
+            drift_detected = bool(self.drift_detector.update_batch(preds_val, self.y_val))
+            if drift_detected:
+                self.drift_count += 1
+                print(f"  [Client {self.node_id}] ADWIN drift detected — resetting ANFIS")
+                self._reset_anfis_weights()
+
+            # IDS-aware coverage: fraction of classes detected with ≥0.5 accuracy.
+            try:
+                classes = np.arange(self.n_classes)
+                detected = 0
+                for c in classes:
+                    idx = np.where(self.y_val == c)[0]
+                    if len(idx) == 0:
+                        continue
+                    acc_c = float(np.mean(preds_val[idx] == c))
+                    if acc_c >= 0.5:
+                        detected += 1
+                coverage_score = detected / float(self.n_classes)
+            except Exception:
+                coverage_score = None
 
         train_f1 = self._compute_f1(self.X_train, self.y_train)
 
@@ -108,6 +117,7 @@ class FedAIDAClient(fl.client.NumPyClient):
                 'f1':             float(train_f1),
                 'drift_detected': int(drift_detected),
                 'drift_count':    self.drift_count,
+                'coverage_score': float(coverage_score) if coverage_score is not None else None,
             }
         )
 

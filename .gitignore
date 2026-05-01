@@ -30,8 +30,11 @@ logs/
 datasets/nsl_kdd/*.txt
 datasets/nsl_kdd/*.csv
 datasets/cicids2017/*.csv
+datasets/cicids2018/*.csv
 datasets/bot_iot/*.csv
 datasets/**/*.pcap
+datasets/**/*.pcapng
+datasets/**/extracted_csv/
 
 # ── Jupyter ──────────────────────────────────────────────────
 .ipynb_checkpoints/

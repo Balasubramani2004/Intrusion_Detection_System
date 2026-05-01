@@ -57,8 +57,8 @@ fedaida_ids/
     ├── nsl_kdd/
     │   ├── KDDTrain+.txt       ← Download from UNB
     │   └── KDDTest+.txt
-    ├── cicids2017/
-    │   └── *.csv               ← Download from CIC
+    ├── cicids2018/
+    │   └── *.csv               ← Download from CIC (CSE-CIC-IDS2018)
     └── bot_iot/
         └── *.csv               ← Download from UNSW
 ```
@@ -84,10 +84,10 @@ pip install -r requirements.txt
 - Download: `KDDTrain+.txt` and `KDDTest+.txt`
 - Put both in: `datasets/nsl_kdd/`
 
-**CICIDS2017** (8 GB) — PHASE 2
-- Go to: https://www.unb.ca/cic/datasets/ids-2017.html
-- Download: all CSV files (NOT the PCAPs — too large)
-- Put all CSVs in: `datasets/cicids2017/`
+**CSE-CIC-IDS2018** (large) — PHASE 2
+- Go to: https://www.unb.ca/cic/datasets/ids-2018.html
+- Put CSV files in: `datasets/cicids2018/`
+- If you only have PCAP/PCAPNG: place them in `datasets/cicids2018/` and the code can extract flow CSVs into `datasets/cicids2018/extracted_csv/`
 
 **Bot-IoT** (1.2 GB) — PHASE 2
 - Go to: https://research.unsw.edu.au/projects/bot-iot-dataset

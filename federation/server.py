@@ -98,19 +98,26 @@ class IRBAFedAvg(Strategy):
             node_id = int(metrics.get('node_id', -1))
             weights_list.append((node_id, w, n_samples, metrics))
 
-        # Get current global weights for delta computation
-        global_w = parameters_to_ndarrays(self.initial_parameters)
-        all_node_weights = [(nid, w) for nid, w, _, _ in weights_list]
-
         # ── IRBA Trust Scoring ────────────────────────────
         trust_weights = []
-        # Build flat dict of all updates for cosine similarity
-        all_updates_dict = {nid: w[0] for nid, w, _, _ in weights_list if w}
+        # Build flat dict of all updates for cosine similarity (flatten ALL layers)
+        def _flatten_weights(ws: List[np.ndarray]) -> np.ndarray:
+            if not ws:
+                return np.zeros((0,), dtype=np.float32)
+            return np.concatenate([np.asarray(a).ravel() for a in ws]).astype(np.float32)
+
+        all_updates_dict = {nid: _flatten_weights(w) for nid, w, _, _ in weights_list if w}
+
+        # Optional: compute IDS-aware class-coverage trust on a clean validation set,
+        # if clients provided it in their FitRes metrics.
         for node_id, local_w, n_samples, metrics in weights_list:
+            coverage_score = metrics.get("coverage_score", None)
             trust = self.irba.update_trust(
                 node_id=node_id,
-                weight_update=local_w[0],
+                weight_update=_flatten_weights(local_w),
                 all_updates=all_updates_dict
+                ,
+                coverage_score=float(coverage_score) if coverage_score is not None else None,
             )
             trust_weights.append(trust)
 
