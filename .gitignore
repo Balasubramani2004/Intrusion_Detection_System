@@ -36,6 +36,12 @@ datasets/**/*.pcap
 datasets/**/*.pcapng
 datasets/**/extracted_csv/
 
+# ── Live capture rolling PCAP chunks (local only) ────────────
+capture/incoming/*
+capture/processed/*
+!capture/incoming/.gitkeep
+!capture/processed/.gitkeep
+
 # ── Jupyter ──────────────────────────────────────────────────
 .ipynb_checkpoints/
 *.ipynb

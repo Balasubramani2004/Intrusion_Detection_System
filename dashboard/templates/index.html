@@ -53,6 +53,21 @@ body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; fon
 .badge-blocked{ background:#6a1b9a; color:#fff; }
 .badge-benign { background:#1b5e20; color:#fff; }
 #alert-container { max-height:320px; overflow-y:auto; }
+#traffic-container { max-height:380px; overflow-y:auto; }
+.traffic-table { width:100%; border-collapse:collapse; font-size:10px; font-family:Consolas,'Segoe UI',monospace; }
+.traffic-table th { background:#1a2d4a; color:#90A4AE; padding:5px 6px; text-align:left; position:sticky; top:0; white-space:nowrap; }
+.traffic-table td { padding:4px 6px; border-bottom:1px solid #1a2d4a; white-space:nowrap; }
+.traffic-row-attack { background:rgba(183,28,28,0.12); }
+.traffic-row-normal { background:transparent; }
+
+.capture-banner { margin:0 12px 12px; padding:10px 14px; border-radius:6px; font-size:12px; border:1px solid #1e3a5f; }
+.capture-banner.ok { background:rgba(67,160,71,0.12); border-color:#43A047; color:#a5d6a7; }
+.capture-banner.warn { background:rgba(251,140,0,0.12); border-color:#FB8C00; color:#ffcc80; }
+.capture-banner.err { background:rgba(229,57,53,0.12); border-color:#E53935; color:#ef9a9a; }
+.capture-banner a { color:#64B5F6; }
+.setup-checklist { font-size:11px; color:#90A4AE; margin-top:8px; }
+.setup-checklist summary { cursor:pointer; color:#1E88E5; }
+.setup-checklist ol { margin:8px 0 0 18px; line-height:1.6; }
 
 /* ── Node grid ── */
 .node-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
@@ -125,15 +140,27 @@ body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; fon
     &nbsp;|&nbsp;
     <span id="model-status" style="color:#FB8C00">Model Not Loaded</span>
     &nbsp;|&nbsp;
+    <span id="capture-status" style="color:#90A4AE">Capture Inactive</span>
+    &nbsp;|&nbsp;
+    <span id="tshark-status" style="color:#90A4AE">WiFi tshark Inactive</span>
+    &nbsp;|&nbsp;
     <span id="clock" style="color:#90A4AE"></span>
   </div>
 </div>
 
 <!-- Controls -->
 <div class="controls" style="padding:10px 12px 0;">
+  <input id="api-key-input" type="password" placeholder="API key"
+         style="padding:7px 10px;border-radius:4px;border:1px solid #1e3a5f;background:#0f1a2e;color:#e0e8f5;">
+  <input id="capture-iface-input" type="text" placeholder="Capture iface (eth0)"
+         style="padding:7px 10px;border-radius:4px;border:1px solid #1e3a5f;background:#0f1a2e;color:#e0e8f5;">
   <button class="btn btn-load"   onclick="loadModel()">📦 Load Model</button>
   <button class="btn btn-start"  onclick="startMonitoring()">▶ Start Monitoring</button>
   <button class="btn btn-stop"   onclick="stopMonitoring()">⏹ Stop</button>
+  <button class="btn btn-demo"   onclick="startLiveCapture()" style="background:#00695C">📡 Start Live Capture</button>
+  <button class="btn btn-stop"   onclick="stopLiveCapture()">⏹ Stop Capture</button>
+  <button class="btn btn-demo"   onclick="startTsharkIngest()" style="background:#1565C0">📶 Start WiFi Capture (tshark)</button>
+  <button class="btn btn-stop"   onclick="stopTsharkIngest()">⏹ Stop WiFi tshark</button>
   <button class="btn btn-attack" onclick="simulateAttack('PortScan')">🔴 Simulate PortScan</button>
   <button class="btn btn-attack" onclick="simulateAttack('DDoS')" style="background:#7B1FA2">🔴 Simulate DDoS</button>
   <button class="btn btn-demo"   onclick="simulateAttack('Reconnaissance')">🟡 Simulate Recon</button>
@@ -163,24 +190,70 @@ body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; fon
   </div>
 </div>
 
+<!-- Capture status banner -->
+<div id="capture-banner" class="capture-banner err">
+  <span id="capture-banner-text">No real packets captured. For Wi-Fi: run Windows tshark script, then click <b>Start WiFi Capture (tshark)</b> — not Start Monitoring (demo only).</span>
+  <span id="capture-banner-stats" style="display:block;margin-top:4px;font-size:10px;color:#90A4AE;"></span>
+</div>
+
+<!-- Wireshark-style live traffic (above alert feed) -->
+<div id="live-traffic-section" style="padding:0 12px 12px;">
+  <div class="card">
+    <h3 id="live-traffic-anchor">Live Traffic — Wireshark View + IDS</h3>
+    <div style="color:#90A4AE;font-size:10px;margin-bottom:8px;">
+      Same columns as Wireshark: No, Time, Source, Destination, Protocol, Length, Info.
+      Times are shown in <b>your PC local timezone</b> (capture runs in WSL/UTC).
+      Real Wi-Fi requires <b>Start WiFi Capture (tshark)</b> + Windows script (WSL eth0 is not your Wi-Fi).
+    </div>
+    <details class="setup-checklist">
+      <summary>Wi-Fi capture setup checklist</summary>
+      <ol>
+        <li>Windows PowerShell (Admin): <code>tshark -D</code> — note Wi-Fi interface number</li>
+        <li>Run <code>scripts/start_wifi_tshark_windows.ps1</code> on the host</li>
+        <li>WSL: <code>export DASHBOARD_API_KEY=demo-key</code> and restart <code>python dashboard/app.py</code></li>
+        <li>Load Model → <b>Start WiFi Capture (tshark)</b></li>
+        <li>Compare this table with Wireshark side-by-side</li>
+      </ol>
+      See <code>docs/wireshark_wifi_capture.md</code> in the project for full steps.
+    </details>
+    <div id="traffic-container" style="margin-top:10px;">
+      <table class="traffic-table">
+        <thead>
+          <tr>
+            <th>No.</th><th>Time</th><th>Source</th><th>Destination</th>
+            <th>Protocol</th><th>Length</th><th>Info</th>
+            <th>Detection</th><th>Conf.</th><th>Severity</th>
+          </tr>
+        </thead>
+        <tbody id="traffic-tbody">
+          <tr><td colspan="10" style="text-align:center;color:#546E7A;padding:16px;">
+            No packets yet — start WiFi tshark or live capture
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- Main Grid -->
 <div class="grid">
 
   <!-- Alert Feed — spans 2 columns -->
   <div class="card" style="grid-column:span 2;">
-    <h3>🔴 Live Alert Feed</h3>
+    <h3>Live Alert Feed</h3>
     <div id="alert-container">
       <table class="alert-table">
         <thead>
           <tr>
-            <th>#</th><th>Time</th><th>Source IP</th>
+            <th>#</th><th>Time</th><th>Source</th><th>Destination</th>
+            <th>Protocol</th><th>Length</th>
             <th>Attack Type</th><th>Confidence</th>
             <th>Severity</th><th>Status</th>
           </tr>
         </thead>
         <tbody id="alert-tbody">
-          <tr><td colspan="7" style="text-align:center;color:#546E7A;padding:20px;">
-            No alerts yet — start monitoring
+          <tr><td colspan="10" style="text-align:center;color:#546E7A;padding:20px;">
+            No alerts yet — use Simulate buttons or real WiFi capture
           </td></tr>
         </tbody>
       </table>
@@ -235,8 +308,200 @@ body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; fon
 
 <script>
 const socket = io();
+const trafficRows = new Map();
+const TRAFFIC_MAX = 300;
 let alertCount = 0;
 let blockedIPs = {};
+
+function authHeaders(extra = {}) {
+  const apiKey = document.getElementById('api-key-input').value.trim();
+  return {
+    'Content-Type': 'application/json',
+    ...(apiKey ? {'X-API-Key': apiKey} : {}),
+    ...extra
+  };
+}
+
+function esc(s) {
+  if (s == null || s === '') return '—';
+  return String(s).replace(/</g, '&lt;');
+}
+
+/** PCAP/server times are UTC; show in browser local time (matches Wireshark on this PC). */
+function formatLocalTime(epochSec, isoUtc) {
+  let d = null;
+  if (epochSec != null && !Number.isNaN(epochSec)) {
+    d = new Date(Number(epochSec) * 1000);
+  } else if (isoUtc) {
+    const s = String(isoUtc);
+    d = new Date(s.endsWith('Z') || s.includes('+') ? s : s + 'Z');
+  }
+  if (!d || Number.isNaN(d.getTime())) return isoUtc || '';
+  const p = (n, w) => String(n).padStart(w, '0');
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} `
+    + `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${ms}`;
+}
+
+function renderAlertRow(alert) {
+  const row = document.createElement('tr');
+  const sev = alert.severity || 'LOW';
+  row.className = `alert-row-${sev.toLowerCase()}`;
+  const blocked = alert.blocked
+    ? '<span class="badge badge-blocked">BLOCKED</span>'
+    : '<span class="badge badge-low">ALERT</span>';
+  row.innerHTML = `
+    <td>${alert.id || ''}</td>
+    <td>${alert.timestamp ? new Date(alert.timestamp).toLocaleTimeString() : ''}</td>
+    <td style="font-family:monospace">${esc(alert.src_ip)}</td>
+    <td style="font-family:monospace">${esc(alert.dst_ip)}</td>
+    <td>${esc(alert.protocol)}</td>
+    <td>${alert.length != null && alert.length !== '' ? esc(alert.length) : '—'}</td>
+    <td><b>${alert.attack_type || 'Unknown'}</b></td>
+    <td>${typeof alert.confidence === 'number' ? (alert.confidence*100).toFixed(1) + '%' : ''}</td>
+    <td><span class="badge badge-${sev.toLowerCase()}">${sev}</span></td>
+    <td>${blocked}</td>`;
+  return row;
+}
+
+function updateCaptureBanner(status) {
+  const banner = document.getElementById('capture-banner');
+  const text = document.getElementById('capture-banner-text');
+  const stats = document.getElementById('capture-banner-stats');
+  const pkts = status.traffic_packets || 0;
+  const last = status.last_packet_at || '';
+  const err = (status.tshark_stats && status.tshark_stats.last_error) || status.tshark_stale_message || '';
+  const live = status.tshark_active || status.capture_active;
+  const hasPkts = pkts > 0;
+
+  let cls = 'err';
+  let msg = 'No real packets captured. For Wi-Fi: run Windows tshark script, then click <b>Start WiFi Capture (tshark)</b>.';
+  if (status.monitoring && !hasPkts && !live) {
+    cls = 'warn';
+    msg = '<b>Demo mode active</b> — Start Monitoring uses synthetic fake IPs, not Wi-Fi. Stop it and use <b>Start WiFi Capture (tshark)</b> for Protocol/Destination/Length.';
+  } else if (live && hasPkts) {
+    cls = 'ok';
+    msg = 'Live capture ingesting packets — compare the table below with Wireshark.';
+  } else if (live && !hasPkts) {
+    cls = 'warn';
+    msg = 'Capture started but no packets yet. Run <code>start_wifi_tshark_windows.ps1</code> on Windows and check <code>capture/incoming/</code>.';
+  } else if (hasPkts) {
+    cls = 'ok';
+    msg = 'Packets buffered — scroll to Live Traffic table above.';
+  }
+
+  banner.className = 'capture-banner ' + cls;
+  text.innerHTML = msg;
+  let statLine = `Packets buffered: ${pkts}`;
+  if (last) statLine += ` | Last packet: ${formatLocalTime(null, last)} (local)`;
+  if (err) statLine += ` | ${err}`;
+  stats.textContent = statLine;
+}
+
+function renderTrafficRow(row) {
+  const tr = document.createElement('tr');
+  const attack = row.is_attack;
+  tr.className = attack ? 'traffic-row-attack' : 'traffic-row-normal';
+  tr.dataset.no = row.no;
+  const conf = row.confidence != null ? (row.confidence * 100).toFixed(1) + '%' : '';
+  tr.innerHTML = `
+    <td>${row.no ?? ''}</td>
+    <td>${formatLocalTime(row.time_epoch, row.time)}</td>
+    <td>${row.source ?? ''}</td>
+    <td>${row.destination ?? ''}</td>
+    <td>${row.protocol ?? ''}</td>
+    <td>${row.length ?? ''}</td>
+    <td title="${(row.info || '').replace(/"/g, '&quot;')}">${row.info ?? ''}</td>
+    <td>${row.detection || (row.protocol === 'ARP' ? '—' : '')}</td>
+    <td>${conf}</td>
+    <td>${row.severity || ''}</td>`;
+  return tr;
+}
+
+function prependTrafficRow(row) {
+  const tbody = document.getElementById('traffic-tbody');
+  if (tbody.querySelector('td[colspan]')) tbody.innerHTML = '';
+  const tr = renderTrafficRow(row);
+  tbody.prepend(tr);
+  trafficRows.set(row.no, tr);
+  while (trafficRows.size > TRAFFIC_MAX) {
+    const oldest = trafficRows.keys().next().value;
+    const oldTr = trafficRows.get(oldest);
+    if (oldTr && oldTr.parentNode) oldTr.remove();
+    trafficRows.delete(oldest);
+  }
+}
+
+function applyTrafficDetection(d) {
+  for (const tr of trafficRows.values()) {
+    const cells = tr.querySelectorAll('td');
+    if (cells.length < 10) continue;
+    const src = cells[2].textContent;
+    const dst = cells[3].textContent;
+    const match = (src === d.src_ip && dst === d.dst_ip) || (src === d.dst_ip && dst === d.src_ip);
+    if (match) {
+      cells[7].textContent = d.detection || '';
+      cells[8].textContent = d.confidence != null ? (d.confidence * 100).toFixed(1) + '%' : '';
+      cells[9].textContent = d.severity || '';
+      if (d.is_attack) tr.className = 'traffic-row-attack';
+    }
+  }
+}
+
+async function refreshTraffic() {
+  try {
+    const res = await fetch('/api/traffic?limit=150');
+    const data = await res.json();
+    const packets = data.packets || [];
+    if (!packets.length) return;
+    const tbody = document.getElementById('traffic-tbody');
+    tbody.innerHTML = '';
+    trafficRows.clear();
+    packets.slice().reverse().forEach(row => prependTrafficRow(row));
+  } catch (e) {
+    console.warn('Traffic refresh failed', e);
+  }
+}
+
+async function refreshSnapshot() {
+  try {
+    const [statusRes, alertsRes, blockedRes] = await Promise.all([
+      fetch('/api/status'),
+      fetch('/api/alerts'),
+      fetch('/api/blocked')
+    ]);
+    const status = await statusRes.json();
+    const alerts = await alertsRes.json();
+    blockedIPs = await blockedRes.json();
+
+    document.getElementById('stat-flows').textContent = status.flows_seen || 0;
+    document.getElementById('stat-alerts').textContent = status.alert_count || 0;
+    document.getElementById('stat-blocked').textContent = Object.keys(blockedIPs || {}).length;
+    document.getElementById('fl-round-val').textContent = status.fl_round || 0;
+    document.getElementById('fl-round-display').textContent = status.fl_round || 0;
+    document.getElementById('monitor-status').textContent = status.monitoring ? 'Monitoring Active' : 'Monitoring Inactive';
+    document.getElementById('monitor-dot').className = status.monitoring ? 'status-dot dot-green' : 'status-dot dot-red';
+    updateTsharkStatusEl(status.tshark_active, status.tshark_stats);
+    updateCaptureBanner(status);
+    if (status.capture_active) {
+      document.getElementById('capture-status').textContent =
+        `Capture Active (${status.capture_interface || 'default'})`;
+      document.getElementById('capture-status').style.color = '#43A047';
+    }
+    initNodes(status.trust_scores || Array(9).fill(0.5), status.quarantined || []);
+    renderBlocked();
+
+    const tbody = document.getElementById('alert-tbody');
+    tbody.innerHTML = '';
+    if (!alerts || alerts.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#546E7A;padding:20px;">No alerts yet — use Simulate buttons or real WiFi capture</td></tr>';
+    } else {
+      alerts.slice(0, 100).forEach(a => tbody.appendChild(renderAlertRow(a)));
+    }
+  } catch (e) {
+    console.warn('Snapshot refresh failed', e);
+  }
+}
 
 // Clock
 setInterval(() => {
@@ -267,6 +532,7 @@ function initNodes(trustScores, quarantined) {
 
 // Socket events
 socket.on('connect', () => console.log('Dashboard connected'));
+socket.on('connect', () => refreshSnapshot());
 
 socket.on('initial_state', d => {
   initNodes(d.trust_scores || [], d.quarantined || []);
@@ -276,26 +542,20 @@ socket.on('initial_state', d => {
     document.getElementById('model-status').textContent = '✅ Model Loaded';
     document.getElementById('model-status').style.color = '#43A047';
   }
+  if (d.capture_active) {
+    document.getElementById('capture-status').textContent =
+      `📡 Capture Active (${d.capture_interface || 'default'})`;
+    document.getElementById('capture-status').style.color = '#43A047';
+  }
+  if (d.tshark_active) {
+    updateTsharkStatusEl(true, d.tshark_stats);
+  }
 });
 
 socket.on('new_alert', alert => {
   alertCount++;
   document.getElementById('stat-alerts').textContent  = alertCount;
-
-  const row   = document.createElement('tr');
-  const sev   = alert.severity || 'LOW';
-  row.className = `alert-row-${sev.toLowerCase()}`;
-  const blocked = alert.blocked
-    ? '<span class="badge badge-blocked">BLOCKED</span>'
-    : '<span class="badge badge-low">ALERT</span>';
-  row.innerHTML = `
-    <td>${alert.id}</td>
-    <td>${new Date(alert.timestamp).toLocaleTimeString()}</td>
-    <td style="font-family:monospace">${alert.src_ip}</td>
-    <td><b>${alert.attack_type}</b></td>
-    <td>${(alert.confidence*100).toFixed(1)}%</td>
-    <td><span class="badge badge-${sev.toLowerCase()}">${sev}</span></td>
-    <td>${blocked}</td>`;
+  const row = renderAlertRow(alert);
 
   const tbody = document.getElementById('alert-tbody');
   // Clear placeholder
@@ -353,12 +613,13 @@ socket.on('monitoring_status', d => {
   const dot    = document.getElementById('monitor-dot');
   const status = document.getElementById('monitor-status');
   if (d.active) {
-    dot.className    = 'status-dot dot-green';
-    status.textContent = 'Monitoring Active';
+    dot.className    = 'status-dot dot-yellow';
+    status.textContent = d.demo_only ? 'Demo Monitoring (synthetic)' : 'Monitoring Active';
   } else {
     dot.className    = 'status-dot dot-red';
     status.textContent = 'Monitoring Inactive';
   }
+  fetch('/api/status').then(r => r.json()).then(updateCaptureBanner).catch(() => {});
 });
 
 socket.on('flow_stats', d => {
@@ -384,6 +645,46 @@ socket.on('model_status', d => {
   }
 });
 
+socket.on('capture_status', d => {
+  const el = document.getElementById('capture-status');
+  if (d.active) {
+    el.textContent = `📡 Capture Active (${d.interface || 'default'})`;
+    el.style.color = '#43A047';
+  } else {
+    el.textContent = 'Capture Inactive';
+    el.style.color = '#90A4AE';
+  }
+});
+
+function updateTsharkStatusEl(active, stats) {
+  const el = document.getElementById('tshark-status');
+  if (active) {
+    const pkts = (stats && stats.packets) ? stats.packets : 0;
+    const flows = (stats && stats.flows) ? stats.flows : 0;
+    el.textContent = `WiFi tshark Active | ${pkts} pkts, ${flows} flows`;
+    el.style.color = '#43A047';
+  } else {
+    el.textContent = 'WiFi tshark Inactive';
+    el.style.color = '#90A4AE';
+  }
+}
+
+socket.on('tshark_status', d => {
+  updateTsharkStatusEl(d.active, d.stats);
+  if (d.message) console.log('[tshark]', d.message);
+  if (d.stopped_demo_monitoring) {
+    document.getElementById('monitor-dot').className = 'status-dot dot-red';
+    document.getElementById('monitor-status').textContent = 'Monitoring Inactive';
+  }
+  fetch('/api/status').then(r => r.json()).then(updateCaptureBanner).catch(() => {});
+});
+
+socket.on('traffic_packet', row => {
+  prependTrafficRow(row);
+  fetch('/api/status').then(r => r.json()).then(updateCaptureBanner).catch(() => {});
+});
+socket.on('traffic_detection', d => applyTrafficDetection(d));
+
 // Render blocked IPs
 function renderBlocked() {
   const el = document.getElementById('blocked-list');
@@ -402,33 +703,83 @@ function renderBlocked() {
 }
 
 // Actions
-function startMonitoring() { socket.emit('start_monitoring', {}); }
-function stopMonitoring()   { socket.emit('stop_monitoring',  {}); }
+function startMonitoring() {
+  const apiKey = document.getElementById('api-key-input').value.trim();
+  socket.emit('start_monitoring', { api_key: apiKey });
+}
+function stopMonitoring() {
+  const apiKey = document.getElementById('api-key-input').value.trim();
+  socket.emit('stop_monitoring', { api_key: apiKey });
+}
 
 function loadModel() {
   fetch('/api/load_model', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({dataset:'botiot', n_classes:6})
+    method:'POST', headers: authHeaders(),
+    body: JSON.stringify({dataset:'bot_iot', n_classes:5})
   }).then(r=>r.json()).then(d => alert(d.message));
 }
 
 function simulateAttack(type) {
   fetch('/api/simulate_attack', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers: authHeaders(),
     body: JSON.stringify({type, src_ip:'192.168.1.' + Math.floor(Math.random()*200+10)})
   });
 }
 
 function unblockIP(ip) {
-  fetch('/api/unblock/' + ip, {method:'POST'});
+  fetch('/api/unblock/' + ip, {method:'POST', headers: authHeaders()});
 }
 
 function unblockAll() {
-  fetch('/api/unblock_all', {method:'POST'});
+  fetch('/api/unblock_all', {method:'POST', headers: authHeaders()});
+}
+
+function startLiveCapture() {
+  const iface = document.getElementById('capture-iface-input').value.trim();
+  fetch('/api/capture/start', {
+    method:'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ interface: iface || null, count: 0 })
+  }).then(r => r.json()).then(d => alert(d.message || d.status));
+}
+
+function stopLiveCapture() {
+  fetch('/api/capture/stop', {
+    method:'POST',
+    headers: authHeaders()
+  }).then(r => r.json()).then(d => alert(d.message || d.status));
+}
+
+function startTsharkIngest() {
+  fetch('/api/capture/tshark/start', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({})
+  }).then(r => r.json()).then(d => {
+    alert(d.message || d.status);
+    if (d.stopped_demo_monitoring) {
+      document.getElementById('monitor-dot').className = 'status-dot dot-red';
+      document.getElementById('monitor-status').textContent = 'Monitoring Inactive';
+    }
+    refreshSnapshot();
+    refreshTraffic();
+    document.getElementById('live-traffic-anchor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+function stopTsharkIngest() {
+  fetch('/api/capture/tshark/stop', {
+    method: 'POST',
+    headers: authHeaders()
+  }).then(r => r.json()).then(d => alert(d.message || d.status));
 }
 
 // Init nodes on load
 initNodes(Array(9).fill(0.5), []);
+setInterval(refreshSnapshot, 3000);
+setInterval(refreshTraffic, 1000);
+refreshSnapshot();
+refreshTraffic();
 </script>
 </body>
 </html>

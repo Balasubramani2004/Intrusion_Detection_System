@@ -56,6 +56,10 @@ DASHBOARD_DEBUG   = False
 MODEL_DIR         = os.path.join(BASE_DIR, "saved_models")  # alias for MODELS_DIR
 CONFIDENCE_HIGH   = 0.90
 CONFIDENCE_MEDIUM = 0.70
+ALERT_CONFIDENCE_THRESHOLD = CONFIDENCE_MEDIUM
+MIN_FLOW_PACKETS = 3
+TSHARK_INCOMING_DIR = os.path.join(BASE_DIR, "capture", "incoming")
+TSHARK_PROCESSED_DIR = os.path.join(BASE_DIR, "capture", "processed")
 ATTACK_NAMES      = {
     0: 'Normal',
     1: 'DoS',

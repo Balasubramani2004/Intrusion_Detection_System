@@ -13,12 +13,19 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 try:
-    from scapy.all import sniff, IP, TCP, UDP, conf as scapy_conf
+    from scapy.all import sniff, IP, TCP, UDP, ARP
+    try:
+        from scapy.layers.inet6 import IPv6
+    except ImportError:
+        IPv6 = None  # type: ignore
     SCAPY_AVAILABLE = True
 except ImportError:
     SCAPY_AVAILABLE = False
+    IPv6 = None  # type: ignore
     logger.warning("Scapy not available — live capture disabled. "
                    "Run: pip install scapy")
+
+from capture.wireshark_view import packet_to_row
 
 try:
     from config import SEQUENCE_LEN, MODELS_DIR, CONFIDENCE_HIGH
@@ -123,9 +130,10 @@ class LiveCapture:
     Captures → extracts features → classifies → alerts dashboard.
     """
     def __init__(self, interface=None, on_alert_callback=None,
-                 label_names=None, scaler=None):
+                 on_packet_callback=None, label_names=None, scaler=None):
         self.interface  = interface
         self.callback   = on_alert_callback
+        self.on_packet_callback = on_packet_callback
         self.label_names= label_names or ['Normal','DoS','Probe','R2L','U2R']
         self.scaler     = scaler
         self.flows      = {}
@@ -142,40 +150,70 @@ class LiveCapture:
                 logger.info("Scaler loaded for live capture")
 
     def _get_flow_key(self, pkt):
-        if IP not in pkt:
+        if IP in pkt:
+            src = pkt[IP].src
+            dst = pkt[IP].dst
+            proto = int(pkt[IP].proto)
+            sport = int(pkt[TCP].sport) if TCP in pkt else (int(pkt[UDP].sport) if UDP in pkt else 0)
+            dport = int(pkt[TCP].dport) if TCP in pkt else (int(pkt[UDP].dport) if UDP in pkt else 0)
+        elif IPv6 is not None and IPv6 in pkt:
+            src = pkt[IPv6].src
+            dst = pkt[IPv6].dst
+            proto = int(pkt[IPv6].nh)
+            sport = int(pkt[TCP].sport) if TCP in pkt else (int(pkt[UDP].sport) if UDP in pkt else 0)
+            dport = int(pkt[TCP].dport) if TCP in pkt else (int(pkt[UDP].dport) if UDP in pkt else 0)
+        else:
             return None
-        src = pkt[IP].src; dst = pkt[IP].dst
-        proto = pkt[IP].proto
-        sport = pkt[TCP].sport if TCP in pkt else (pkt[UDP].sport if UDP in pkt else 0)
-        dport = pkt[TCP].dport if TCP in pkt else (pkt[UDP].dport if UDP in pkt else 0)
-        # Bidirectional key (smaller IP first)
         if src < dst:
             return (src, dst, sport, dport, proto)
         return (dst, src, dport, sport, proto)
 
-    def _process_packet(self, pkt):
+    def _emit_packet_row(self, pkt):
         self.stats['packets'] += 1
-        if IP not in pkt:
+        epoch = float(pkt.time) if hasattr(pkt, 'time') else None
+        row = packet_to_row(pkt, self.stats['packets'], epoch=epoch)
+        if self.on_packet_callback:
+            try:
+                self.on_packet_callback(row)
+            except Exception as e:
+                logger.debug("Packet callback error: %s", e)
+
+    def _process_packet(self, pkt):
+        self._emit_packet_row(pkt)
+
+        if IP not in pkt and not (IPv6 is not None and IPv6 in pkt):
             return
+
         key = self._get_flow_key(pkt)
         if key is None:
             return
 
-        src_ip = pkt[IP].src
-        if key not in self.flows:
+        if IP in pkt:
+            src_ip = pkt[IP].src
             dst_ip = pkt[IP].dst
-            sport  = pkt[TCP].sport if TCP in pkt else (pkt[UDP].sport if UDP in pkt else 0)
-            dport  = pkt[TCP].dport if TCP in pkt else (pkt[UDP].dport if UDP in pkt else 0)
-            proto  = 6 if TCP in pkt else (17 if UDP in pkt else 0)
+        else:
+            src_ip = pkt[IPv6].src
+            dst_ip = pkt[IPv6].dst
+
+        if key not in self.flows:
+            sport = int(pkt[TCP].sport) if TCP in pkt else (int(pkt[UDP].sport) if UDP in pkt else 0)
+            dport = int(pkt[TCP].dport) if TCP in pkt else (int(pkt[UDP].dport) if UDP in pkt else 0)
+            if TCP in pkt:
+                proto = 6
+            elif UDP in pkt:
+                proto = 17
+            elif IP in pkt:
+                proto = int(pkt[IP].proto)
+            else:
+                proto = int(pkt[IPv6].nh)
             self.flows[key] = FlowRecord(src_ip, dst_ip, sport, dport, proto)
 
         flow = self.flows[key]
         pkt_len = len(pkt)
         flags = int(pkt[TCP].flags) if TCP in pkt else 0
-        direction = 'fwd' if pkt[IP].src == flow.src_ip else 'bwd'
+        direction = 'fwd' if src_ip == flow.src_ip else 'bwd'
         flow.add_packet(pkt_len, flags, direction)
 
-        # Check for expired flows
         expired = [k for k, f in self.flows.items() if f.is_expired]
         for k in expired:
             self._finalise_flow(self.flows.pop(k))
@@ -191,12 +229,14 @@ class LiveCapture:
             except Exception as e:
                 logger.debug(f"Scaler error: {e}")
 
+        proto_name = 'TCP' if flow.protocol == 6 else ('UDP' if flow.protocol == 17 else str(flow.protocol))
         self.flow_buffer.append({
             'features': features,
             'src_ip': flow.src_ip,
             'dst_ip': flow.dst_ip,
+            'src_port': flow.src_port,
             'dst_port': flow.dst_port,
-            'protocol': 'TCP' if flow.protocol == 6 else 'UDP',
+            'protocol': proto_name,
             'pkt_count': flow.pkt_count,
             'bytes': flow.byte_count,
             'duration': round(flow.last_time - flow.start_time, 3),

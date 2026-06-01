@@ -168,7 +168,9 @@ class FedAIDASimulation:
         # Evaluate global model
         X_te, y_te = self.test_data
         if len(X_te) > 0:
-            loss_te, acc_te = self.global_model.evaluate(X_te, y_te, verbose=0)
+            eval_metrics = self.global_model.evaluate(X_te, y_te, verbose=0)
+            loss_te = float(eval_metrics[0]) if len(eval_metrics) > 0 else 0.0
+            acc_te = float(eval_metrics[1]) if len(eval_metrics) > 1 else 0.0
             from sklearn.metrics import f1_score
             preds_te = np.argmax(self.global_model.predict(X_te, verbose=0), axis=1)
             f1 = f1_score(y_te, preds_te, average='macro', zero_division=0)
@@ -300,8 +302,14 @@ def main():
         if os.path.exists(weights_path):
             model.load_weights(weights_path)
             X_te, y_te = test_data
-            metrics = evaluate_model(model, X_te, y_te, label_names,
-                                     PLOTS_DIR, prefix='eval_')
+            metrics = evaluate_model(
+                model, X_te, y_te,
+                class_names=label_names,
+                save_dir=PLOTS_DIR,
+                dataset_name=f"{args.dataset}_eval",
+            )
+            with open(os.path.join(METRICS_DIR, 'eval_metrics.json'), 'w') as f:
+                json.dump(metrics, f, indent=2)
             print(json.dumps(metrics, indent=2))
         else:
             logger.error(f"No saved model at {weights_path}")
@@ -398,8 +406,8 @@ def main():
                         anfis = drift_model.get_layer("anfis")
                         for w in anfis.trainable_variables:
                             w.assign(tf.random.normal(w.shape, stddev=0.1))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("ANFIS reset failed during drift adaptation: %s", e)
 
                 # One short adaptation epoch on post-drift batch
                 drift_model.fit(X_batch, y_batch, epochs=1, batch_size=BATCH_SIZE, verbose=0)

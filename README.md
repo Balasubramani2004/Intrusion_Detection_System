@@ -93,6 +93,8 @@ pip install -r requirements.txt
 - Go to: https://research.unsw.edu.au/projects/bot-iot-dataset
 - Download: CSV files (feature-extracted version)
 - Put CSVs in: `datasets/bot_iot/`
+- Full instructions: `docs/datasets_download.md`
+- Verify: `bash scripts/verify_datasets.sh`
 
 ### Step 3 — Verify Setup
 ```bash
@@ -102,6 +104,12 @@ print('TF:', tf.__version__)
 print('Flower:', fl.__version__)
 print('All OK — ready to train')
 "
+```
+
+### Step 3.1 — Install Test Tooling and Run Smoke Tests
+```bash
+pip install -r requirements.txt
+python3 -m pytest
 ```
 
 ### Step 4 — Train (NSL-KDD first)
@@ -114,6 +122,8 @@ python3 train.py --dataset nsl_kdd --rounds 50 --byzantine
 
 # Full: ablation + drift test + multi-seed evaluation
 python3 train.py --dataset nsl_kdd --rounds 50 --byzantine --ablation --drift_test --multi_seed
+
+# Long runs: see docs/PAPER_TRAINING.md and scripts/run_paper_training.sh
 ```
 
 ### Step 5 — Run on College GPU
@@ -142,22 +152,58 @@ python3 scripts/byzantine_test.py --dataset nsl_kdd --rounds 30 --byzantine 2
 # This is your paper Figure 2
 ```
 
-### Step 8 — Run Dashboard
+### Step 8 — Run Dashboard (real Wi-Fi demo)
+
 ```bash
 # After training is complete:
+export DASHBOARD_API_KEY="demo-key"
+export DASHBOARD_CORS_ORIGINS="http://localhost:5000,http://127.0.0.1:5000"
 python3 dashboard/app.py
 # Open browser: http://localhost:5000
-# Click "Start Monitoring" for live demo
 ```
+
+**Real Wi-Fi traffic (recommended for viva):**
+
+1. **Windows (PowerShell Admin):** run `scripts/start_wifi_tshark_windows.ps1`
+2. **WSL:** start dashboard (above), enter API key, click **Load Model**
+3. Click **Start WiFi Capture (tshark)** — not "Start Monitoring" (synthetic demo only)
+4. Compare **Live Traffic** table with Wireshark (Protocol, Destination, Length, Info)
+
+See `docs/wireshark_wifi_capture.md` for full workflow and troubleshooting.
+
+**Synthetic demo only:** click **Simulate PortScan / DDoS / Recon** after Load Model.
 
 ### Step 9 — Live Demo on College Network (Viva Day)
-```bash
-# On Machine 1 (runs FedAIDA-IDS):
-sudo python3 capture/live_capture.py --interface eth0
 
-# On Machine 2 (simulates attack):
-nmap -sS 192.168.x.x   # port scan — FedAIDA detects within 3 seconds
+**Option A — Wi-Fi via Windows tshark (WSL + laptop Wi-Fi):**
+
+```powershell
+# Windows host
+cd \\wsl$\Ubuntu\home\<user>\projects\IDS\fedaida_ids
+.\scripts\start_wifi_tshark_windows.ps1
 ```
+
+```bash
+# WSL — dashboard + ingest
+export DASHBOARD_API_KEY=demo-key
+python3 dashboard/app.py
+# UI: Load Model → Start WiFi Capture (tshark)
+```
+
+**Option B — Native Linux capture (machine with NIC access):**
+
+```bash
+sudo python3 capture/live_capture.py --interface eth0
+# Dashboard: Start Live Capture (same API key workflow)
+```
+
+**Attack simulation (second machine on LAN):**
+
+```bash
+nmap -sS 192.168.x.x   # port scan — check Live Alert Feed + Detection column
+```
+
+Rehearsal checklist: `docs/realtime_demo_runbook.md`
 
 ---
 
@@ -173,6 +219,47 @@ nmap -sS 192.168.x.x   # port scan — FedAIDA detects within 3 seconds
 | `python3 train.py --eval_only` | Evaluate saved model |
 | `python3 scripts/byzantine_test.py` | Full Byzantine comparison |
 | `python3 dashboard/app.py` | Start dashboard |
+
+---
+
+## Dashboard Security Notes
+
+- Mutating dashboard endpoints require `X-API-Key` (or `Authorization: Bearer <key>`).
+- Set `DASHBOARD_API_KEY` before launching `dashboard/app.py`.
+- Default CORS is restricted to localhost origins; adjust using `DASHBOARD_CORS_ORIGINS`.
+- Protected API routes include:
+  - `POST /api/load_model`
+  - `POST /api/simulate_attack`
+  - `POST /api/update_fl_round`
+  - `POST /api/unblock/<ip>`
+  - `POST /api/unblock_all`
+
+---
+
+## Development and Validation Checklist
+
+Run this checklist before merging changes:
+
+```bash
+# 1) Install project dependencies
+pip install -r requirements.txt
+
+# 2) Execute automated tests
+python3 -m pytest
+
+# 3) Run one short training smoke path
+python3 train.py --dataset nsl_kdd --rounds 1 --nodes 3
+
+# 4) Start dashboard with API key enabled
+export DASHBOARD_API_KEY="local-dev-key"
+python3 dashboard/app.py
+```
+
+Expected outcomes:
+- Tests pass without errors.
+- `train.py` produces metrics/model artifacts under `results/` and `saved_models/`.
+- Dashboard starts and read-only endpoints work without auth.
+- Mutating dashboard endpoints reject requests without API key.
 
 ---
 
