@@ -247,13 +247,13 @@ body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; fon
           <tr>
             <th>#</th><th>Time</th><th>Source</th><th>Destination</th>
             <th>Protocol</th><th>Length</th>
-            <th>Attack Type</th><th>Confidence</th>
+            <th>Attack Type</th><th>Method</th><th>Confidence</th>
             <th>Severity</th><th>Status</th>
           </tr>
         </thead>
         <tbody id="alert-tbody">
-          <tr><td colspan="10" style="text-align:center;color:#546E7A;padding:20px;">
-            No alerts yet — use Simulate buttons or real WiFi capture
+          <tr><td colspan="11" style="text-align:center;color:#546E7A;padding:20px;">
+            No alerts yet — real port-scan or Simulate buttons only
           </td></tr>
         </tbody>
       </table>
@@ -357,7 +357,8 @@ function renderAlertRow(alert) {
     <td style="font-family:monospace">${esc(alert.dst_ip)}</td>
     <td>${esc(alert.protocol)}</td>
     <td>${alert.length != null && alert.length !== '' ? esc(alert.length) : '—'}</td>
-    <td><b>${alert.attack_type || 'Unknown'}</b></td>
+    <td title="${esc(alert.scan_evidence || alert.info || '')}"><b>${alert.attack_type || 'Unknown'}</b></td>
+    <td style="font-size:9px;color:#90A4AE">${esc(alert.detection_method || '')}</td>
     <td>${typeof alert.confidence === 'number' ? (alert.confidence*100).toFixed(1) + '%' : ''}</td>
     <td><span class="badge badge-${sev.toLowerCase()}">${sev}</span></td>
     <td>${blocked}</td>`;
@@ -393,6 +394,10 @@ function updateCaptureBanner(status) {
   banner.className = 'capture-banner ' + cls;
   text.innerHTML = msg;
   let statLine = `Packets buffered: ${pkts}`;
+  if (status.lan_scan_enabled) {
+    const locals = (status.local_ips || []).join(', ') || 'detecting...';
+    statLine += ` | LAN scan watch: ON (this PC: ${locals})`;
+  }
   if (last) statLine += ` | Last packet: ${formatLocalTime(null, last)} (local)`;
   if (err) statLine += ` | ${err}`;
   stats.textContent = statLine;
@@ -412,7 +417,7 @@ function renderTrafficRow(row) {
     <td>${row.protocol ?? ''}</td>
     <td>${row.length ?? ''}</td>
     <td title="${(row.info || '').replace(/"/g, '&quot;')}">${row.info ?? ''}</td>
-    <td>${row.detection || (row.protocol === 'ARP' ? '—' : '')}</td>
+    <td title="${esc(row.scan_evidence || '')}">${row.detection || (row.protocol === 'ARP' ? '—' : '')}</td>
     <td>${conf}</td>
     <td>${row.severity || ''}</td>`;
   return tr;
@@ -441,6 +446,7 @@ function applyTrafficDetection(d) {
     const match = (src === d.src_ip && dst === d.dst_ip) || (src === d.dst_ip && dst === d.src_ip);
     if (match) {
       cells[7].textContent = d.detection || '';
+      if (d.scan_evidence) cells[7].title = d.scan_evidence;
       cells[8].textContent = d.confidence != null ? (d.confidence * 100).toFixed(1) + '%' : '';
       cells[9].textContent = d.severity || '';
       if (d.is_attack) tr.className = 'traffic-row-attack';
@@ -494,7 +500,7 @@ async function refreshSnapshot() {
     const tbody = document.getElementById('alert-tbody');
     tbody.innerHTML = '';
     if (!alerts || alerts.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#546E7A;padding:20px;">No alerts yet — use Simulate buttons or real WiFi capture</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#546E7A;padding:20px;">No alerts yet — real port-scan or Simulate buttons only</td></tr>';
     } else {
       alerts.slice(0, 100).forEach(a => tbody.appendChild(renderAlertRow(a)));
     }

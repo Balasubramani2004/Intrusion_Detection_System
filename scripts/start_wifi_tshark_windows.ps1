@@ -1,18 +1,22 @@
-# FedAIDA-IDS — Start Windows Wi-Fi capture via tshark into WSL incoming folder
-# Run in PowerShell (Admin recommended) on the Windows host.
+# FedAIDA-IDS - Start Windows Wi-Fi capture via tshark into WSL incoming folder
+# Run in PowerShell as Administrator on the Windows host.
 #
-# Usage:
+# Usage (from Windows path OR from \\wsl$\Ubuntu\...\fedaida_ids):
 #   .\scripts\start_wifi_tshark_windows.ps1
 #   .\scripts\start_wifi_tshark_windows.ps1 -Interface 5
+#   .\scripts\start_wifi_tshark_windows.ps1 -UseLocalFolder
 #
-# Then in WSL: start dashboard and POST /api/capture/tshark/start (or use UI button).
+# Then in WSL: ./scripts/run_dashboard.sh -> Start WiFi Capture (tshark)
 
 param(
     [int]$Interface = -1,
-    [string]$WslDistro = "Ubuntu",
+    [string]$WslDistro = "",
     [string]$ProjectSubPath = "home/balu/projects/IDS/fedaida_ids/capture/incoming",
     [int]$FileSizeKB = 512,
-    [int]$RingFiles = 12
+    [int]$RingFiles = 12,
+    [switch]$Promiscuous,
+    [switch]$NoPromiscuous,
+    [switch]$UseLocalFolder
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,13 +29,76 @@ function Get-TsharkPath {
         "${env:ProgramFiles(x86)}\Wireshark\tshark.exe"
     )
     foreach ($c in $candidates) {
-        if (Test-Path $c) { return $c }
+        if (Test-Path -LiteralPath $c) { return $c }
     }
-    throw "tshark not found. Install Wireshark from https://www.wireshark.org/download.html"
+    throw "tshark not found. Install Wireshark + Npcap from https://www.wireshark.org/download.html"
+}
+
+function ConvertTo-CleanWslDistroName {
+    param([string]$Raw)
+    if ([string]::IsNullOrWhiteSpace($Raw)) { return "Ubuntu" }
+    $clean = $Raw -replace "`0", ""
+    $clean = $clean -replace '\(Default\)', ''
+    $clean = $clean.Trim()
+    if ($clean -match '^([A-Za-z0-9_-]+)') {
+        return $Matches[1]
+    }
+    return "Ubuntu"
+}
+
+function Get-DefaultWslDistroName {
+    if ($WslDistro) {
+        return (ConvertTo-CleanWslDistroName $WslDistro)
+    }
+    try {
+        $lines = @(wsl.exe -l -q 2>$null)
+        foreach ($line in $lines) {
+            $name = ConvertTo-CleanWslDistroName $line
+            if ($name) { return $name }
+        }
+    } catch { }
+    return "Ubuntu"
+}
+
+function Resolve-IncomingDirectory {
+    $projectRoot = Split-Path -Parent $PSScriptRoot
+    $cwd = (Get-Location).ProviderPath
+
+    if ($UseLocalFolder) {
+        return (Join-Path $env:USERPROFILE "FedAIDA\capture\incoming")
+    }
+
+    # Running from \\wsl$\<distro>\...\fedaida_ids (recommended) - use relative path
+    if ($projectRoot -match '^\\\\wsl\$\\') {
+        return (Join-Path $projectRoot "capture\incoming")
+    }
+    if ($cwd -match '^\\\\wsl\$\\') {
+        $fromCwd = Join-Path $cwd "capture\incoming"
+        if ($cwd -match 'fedaida_ids') {
+            return $fromCwd
+        }
+    }
+
+    $distro = Get-DefaultWslDistroName
+    return "\\wsl$\$distro\$ProjectSubPath"
+}
+
+function Ensure-DirectoryExists {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "Incoming directory path is empty"
+    }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -ItemType Directory -Force -LiteralPath $Path | Out-Null
+        Write-Host "Created: $Path"
+    }
 }
 
 $tshark = Get-TsharkPath
+$distroName = Get-DefaultWslDistroName
+
 Write-Host "Using tshark: $tshark"
+Write-Host "WSL distro: $distroName"
 Write-Host ""
 Write-Host "Available interfaces (use -Interface <number>):"
 & $tshark -D
@@ -48,21 +115,59 @@ if ($Interface -lt 0) {
     }
 }
 
-$incoming = "\\wsl$\$WslDistro\$ProjectSubPath"
-if (-not (Test-Path $incoming)) {
-    New-Item -ItemType Directory -Force -Path $incoming | Out-Null
-    Write-Host "Created: $incoming"
+$incoming = Resolve-IncomingDirectory
+Write-Host "Capture folder: $incoming"
+
+try {
+    Ensure-DirectoryExists -Path $incoming
+} catch {
+    Write-Warning "Could not use capture folder: $incoming"
+    Write-Warning $_.Exception.Message
+    $incoming = Join-Path $env:USERPROFILE "FedAIDA\capture\incoming"
+    Ensure-DirectoryExists -Path $incoming
+    Write-Host "Using local fallback: $incoming"
+    Write-Host "Copy PCAPs to WSL: cp /mnt/c/Users/$($env:USERNAME)/FedAIDA/capture/incoming/*.pcapng ~/projects/IDS/fedaida_ids/capture/incoming/"
 }
 
-$outPattern = Join-Path $incoming "wifi_%05d.pcapng"
-Write-Host "Writing rolling captures to: $outPattern"
-Write-Host "Ring: ${FileSizeKB}KB x $RingFiles files"
+$writeOk = $false
+try {
+    $probe = Join-Path $incoming ".tshark_write_test"
+    [System.IO.File]::WriteAllText($probe, "ok")
+    Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+    $writeOk = $true
+    Write-Host "Write test: OK"
+} catch {
+    Write-Warning "Write test failed for: $incoming"
+    Write-Warning $_.Exception.Message
+}
+
+if (-not $writeOk) {
+    $incoming = Join-Path $env:USERPROFILE "FedAIDA\capture\incoming"
+    Ensure-DirectoryExists -Path $incoming
+    Write-Host "Falling back to: $incoming"
+}
+
+$outBase = Join-Path $incoming "wifi.pcapng"
+Write-Host "Writing rolling captures to: $outBase (ring ${FileSizeKB}KB x $RingFiles)"
 Write-Host "Press Ctrl+C to stop capture."
 Write-Host ""
+Write-Host "Tip: run PowerShell as Administrator if capture fails."
+Write-Host ""
 
-# Rolling capture: new file every FileSizeKB, keep RingFiles files
-& $tshark `
-    -i $Interface `
-    -b "filesize:$FileSizeKB" `
-    -b "files:$RingFiles" `
-    -w $outPattern
+$tsharkArgs = @(
+    "-i", "$Interface",
+    "-b", "filesize:$FileSizeKB",
+    "-b", "files:$RingFiles",
+    "-w", $outBase
+)
+
+# Promiscuous helps see other devices scanning on the same Wi-Fi (when AP allows it)
+$usePromisc = $Promiscuous -or (-not $NoPromiscuous)
+if ($usePromisc) {
+    Write-Host "Promiscuous mode: ON (see more LAN scan traffic between devices)"
+    $tsharkArgs = @("-o", "capture.promiscuous_mode:TRUE") + $tsharkArgs
+} else {
+    Write-Host "Promiscuous mode: OFF (only traffic to/from this PC)"
+}
+
+& $tshark @tsharkArgs

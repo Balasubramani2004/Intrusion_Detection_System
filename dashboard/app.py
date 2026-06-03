@@ -24,7 +24,16 @@ from config import (
     MODEL_DIR, SEQUENCE_LEN, NUM_FEATURES, NUM_CLASSES,
     ATTACK_NAMES, ALERT_CONFIDENCE_THRESHOLD, MIN_FLOW_PACKETS,
     TSHARK_INCOMING_DIR, TSHARK_PROCESSED_DIR,
+    SCAN_WINDOW_SEC, SCAN_MIN_UNIQUE_PORTS, SCAN_MIN_SYN_EVENTS,
+    LAN_SCAN_ENABLED,
+    SCAN_BURST_WINDOW_SEC, SCAN_BURST_MIN_PORTS, SCAN_BURST_MIN_SYN_EVENTS,
+    SCAN_LOCAL_BURST_MIN_PORTS,
+    SCAN_ALERT_COOLDOWN_SEC, SCAN_HEURISTIC_THRESHOLD, SCAN_EXCLUDE_PORTS,
+    LAN_ARP_SWEEP_ENABLED, LAN_ARP_WINDOW_SEC, LAN_ARP_MIN_HOSTS, LAN_ARP_COOLDOWN_SEC,
+    LIVE_ALERT_MODE, LIVE_ML_ALERT_CONFIDENCE, PROBE_CLASS_ID,
 )
+from capture.scan_detector import ScanTracker, ArpScanTracker
+from capture.network_utils import get_local_ipv4_addresses
 
 logger = logging.getLogger("dashboard")
 logging.basicConfig(level=logging.INFO)
@@ -65,6 +74,8 @@ STATE = {
     'traffic_log':     deque(maxlen=1000),
     'packet_no':       0,
     'last_packet_at':  None,
+    'local_ips':       set(),
+    'lan_scan_packets': 0,
 }
 _capture_runtime = {
     "capture": None,
@@ -77,6 +88,50 @@ _tshark_runtime = {
 
 _ALERT_CONF = float(os.getenv("DASHBOARD_ALERT_CONFIDENCE", str(ALERT_CONFIDENCE_THRESHOLD)))
 _MIN_FLOW_PKTS = int(os.getenv("DASHBOARD_MIN_FLOW_PKTS", str(MIN_FLOW_PACKETS)))
+
+_LABEL_PORTSCAN = "PortScan (nmap suspected)"
+_LABEL_PROBE_AI = "Probe (scan suspected)"
+
+_scan_tracker = ScanTracker(
+    window_sec=float(os.getenv("SCAN_WINDOW_SEC", str(SCAN_WINDOW_SEC))),
+    min_unique_ports=int(os.getenv("SCAN_MIN_UNIQUE_PORTS", str(SCAN_MIN_UNIQUE_PORTS))),
+    min_syn_events=int(os.getenv("SCAN_MIN_SYN_EVENTS", str(SCAN_MIN_SYN_EVENTS))),
+    heuristic_threshold=float(
+        os.getenv("SCAN_HEURISTIC_THRESHOLD", str(SCAN_HEURISTIC_THRESHOLD))
+    ),
+    cooldown_sec=float(os.getenv("SCAN_ALERT_COOLDOWN_SEC", str(SCAN_ALERT_COOLDOWN_SEC))),
+    burst_window_sec=float(os.getenv("SCAN_BURST_WINDOW_SEC", str(SCAN_BURST_WINDOW_SEC))),
+    burst_min_ports=int(os.getenv("SCAN_BURST_MIN_PORTS", str(SCAN_BURST_MIN_PORTS))),
+    burst_min_syn_events=int(
+        os.getenv("SCAN_BURST_MIN_SYN_EVENTS", str(SCAN_BURST_MIN_SYN_EVENTS))
+    ),
+    exclude_ports=set(SCAN_EXCLUDE_PORTS),
+    local_burst_min_ports=int(
+        os.getenv("SCAN_LOCAL_BURST_MIN_PORTS", str(SCAN_LOCAL_BURST_MIN_PORTS))
+    ),
+    lan_subnet_only=True,
+)
+_arp_tracker = ArpScanTracker(
+    window_sec=float(os.getenv("LAN_ARP_WINDOW_SEC", str(LAN_ARP_WINDOW_SEC))),
+    min_unique_hosts=int(os.getenv("LAN_ARP_MIN_HOSTS", str(LAN_ARP_MIN_HOSTS))),
+    cooldown_sec=float(os.getenv("LAN_ARP_COOLDOWN_SEC", str(LAN_ARP_COOLDOWN_SEC))),
+)
+_LAN_SCAN_ON = os.getenv("LAN_SCAN_ENABLED", str(LAN_SCAN_ENABLED)).lower() in (
+    "1", "true", "yes", "on"
+)
+_LAN_ARP_ON = os.getenv("LAN_ARP_SWEEP_ENABLED", str(LAN_ARP_SWEEP_ENABLED)).lower() in (
+    "1", "true", "yes", "on"
+)
+_LIVE_ALERT_MODE = os.getenv("LIVE_ALERT_MODE", LIVE_ALERT_MODE).strip().lower()
+_LIVE_ML_CONF = float(os.getenv("LIVE_ML_ALERT_CONFIDENCE", str(LIVE_ML_ALERT_CONFIDENCE)))
+_LAN_CHECK_EVERY_N_PACKETS = 25
+
+
+def _refresh_local_ips():
+    ips = get_local_ipv4_addresses()
+    STATE["local_ips"] = ips
+    _scan_tracker.set_local_ips(ips)
+    logger.info("LAN scan monitor: local IPs %s", sorted(ips) if ips else "(none detected)")
 
 
 def _candidate_weight_paths(dataset):
@@ -153,6 +208,7 @@ def status():
         STATE["tshark_stats"] = ingest.get_status().get("stats", {})
     tstats = STATE.get("tshark_stats", {})
     stale_msg = tstats.get("stale_message")
+    incoming_files = tstats.get("incoming_files", [])
     return jsonify({
         'monitoring':     STATE['is_monitoring'],
         'model_loaded':   STATE['model'] is not None,
@@ -170,6 +226,12 @@ def status():
         'packet_no':      STATE['packet_no'],
         'last_packet_at': STATE.get('last_packet_at'),
         'tshark_stale_message': stale_msg,
+        'tshark_incoming_files': incoming_files,
+        'scan_detection_active': True,
+        'live_alert_mode': _LIVE_ALERT_MODE,
+        'lan_scan_enabled': _LAN_SCAN_ON,
+        'local_ips': sorted(STATE.get("local_ips", [])),
+        'scan_burst_sec': SCAN_BURST_WINDOW_SEC,
     })
 
 
@@ -382,14 +444,14 @@ def start_tshark_ingest():
         return jsonify({"status": "ok", "message": "tshark ingest already running"})
 
     stopped_demo = _stop_demo_monitoring()
-    STATE["traffic_log"].clear()
-    STATE["packet_no"] = 0
-    STATE["last_packet_at"] = None
+    _refresh_local_ips()
+    STATE["lan_scan_packets"] = 0
 
     data = request.json or {}
     incoming = data.get("incoming_dir") or TSHARK_INCOMING_DIR
     processed = data.get("processed_dir") or TSHARK_PROCESSED_DIR
     poll = float(data.get("poll_interval", 1.0))
+    stable = float(data.get("stable_seconds", 1.5))
 
     try:
         from capture.tshark_ingest import TsharkIngest
@@ -404,6 +466,7 @@ def start_tshark_ingest():
         incoming_dir=incoming,
         processed_dir=processed,
         poll_interval=poll,
+        stable_seconds=stable,
         min_flow_packets=_MIN_FLOW_PKTS,
     )
 
@@ -536,6 +599,263 @@ def handle_connect():
 
 # ── Internal Logic ───────────────────────────────────────────
 
+def _raise_lan_scan_hit(scan_eval: dict, flow_meta: dict | None = None) -> bool:
+    """Emit LAN port-scan alert from evaluate() result."""
+    if not _LAN_SCAN_ON or not scan_eval.get("suspected"):
+        return False
+    scanner = scan_eval.get("scanner_ip") or (flow_meta or {}).get("src_ip", "")
+    victim = scan_eval.get("dst_ip") or (flow_meta or {}).get("dst_ip", "")
+    if not scanner or not victim:
+        return False
+    return _maybe_raise_scan_alert(scan_eval, scanner, flow_meta)
+
+
+def _raise_arp_sweep_hit(arp_eval: dict) -> bool:
+    if not _LAN_ARP_ON or not arp_eval.get("suspected"):
+        return False
+    scanner = arp_eval.get("scanner_ip", "")
+    if not scanner or not _arp_tracker.can_alert(scanner):
+        return False
+    evidence = arp_eval.get("scan_evidence", "")
+    conf = max(float(arp_eval.get("score", 0.0)), _ALERT_CONF)
+    _arp_tracker.mark_alert(scanner)
+    _emit_ids_alert(
+        scanner,
+        "ARP sweep (host discovery)",
+        conf,
+        f"IF many_arp_who_has THEN host discovery on LAN",
+        {"dst_ip": "LAN", "protocol": "ARP", "bytes": 0, "pkt_count": 0},
+        detection_method="arp",
+        scan_evidence=evidence,
+    )
+    return True
+
+
+def _check_lan_scans(scanner_hint: str | None = None) -> None:
+    """Evaluate all visible LAN scanners and raise alerts (same Wi-Fi)."""
+    if not _LAN_SCAN_ON:
+        return
+    hits = _scan_tracker.evaluate_all(scanner_ip=scanner_hint)
+    for hit in hits:
+        _raise_lan_scan_hit(hit, None)
+    if _LAN_ARP_ON:
+        for arp_hit in _arp_tracker.evaluate_all():
+            _raise_arp_sweep_hit(arp_hit)
+
+
+def _record_scan_from_flow(flow_meta: dict) -> dict:
+    """Feed flow stats into ScanTracker and return evaluation for scanner IP."""
+    if not flow_meta:
+        return _scan_tracker.evaluate("")
+    proto = (flow_meta.get("protocol") or "").upper()
+    if proto != "TCP":
+        return _scan_tracker.evaluate(flow_meta.get("src_ip", ""))
+    src_ip = flow_meta.get("src_ip") or ""
+    dst_ip = flow_meta.get("dst_ip") or ""
+    if not src_ip or not dst_ip:
+        return _scan_tracker.evaluate(src_ip)
+    syn_count = int(flow_meta.get("syn_count") or 0)
+    pkt_count = int(flow_meta.get("pkt_count") or 1)
+    is_syn = syn_count > 0
+    _scan_tracker.record_flow(
+        src_ip,
+        dst_ip,
+        int(flow_meta.get("dst_port") or 0),
+        is_syn=is_syn,
+        pkt_count=pkt_count,
+        duration=float(flow_meta.get("duration") or 0.0),
+    )
+    return _scan_tracker.evaluate(src_ip)
+
+
+def _record_arp_scan(row: dict) -> None:
+    if row.get("arp_op") != "who-has":
+        return
+    requester = row.get("src_ip") or ""
+    target = row.get("arp_target_ip") or row.get("dst_ip") or ""
+    if requester and target:
+        _arp_tracker.record_who_has(requester, target)
+
+
+def _is_syn_probe_row(row: dict) -> bool:
+    """True for bare SYN (half-open probe), not SYN-ACK or normal sessions."""
+    if row.get("is_syn_probe") is not None:
+        return bool(row["is_syn_probe"])
+    flags = row.get("tcp_flags")
+    if flags is not None:
+        return bool(flags & 0x02) and not bool(flags & 0x10)
+    return bool(row.get("is_syn"))
+
+
+def _record_scan_from_packet(row: dict) -> None:
+    """Update scan tracker only (no alert) — alerts fire on flow aggregation."""
+    if not _is_syn_probe_row(row):
+        return
+    if (row.get("protocol") or "").upper() != "TCP":
+        return
+    src_ip = row.get("src_ip") or ""
+    dst_ip = row.get("dst_ip") or ""
+    dst_port = row.get("dst_port")
+    if not src_ip or not dst_ip or dst_port is None:
+        return
+    _scan_tracker.record_packet_syn(src_ip, dst_ip, int(dst_port))
+    STATE["lan_scan_packets"] = STATE.get("lan_scan_packets", 0) + 1
+    if STATE["lan_scan_packets"] % _LAN_CHECK_EVERY_N_PACKETS == 0:
+        _check_lan_scans(scanner_hint=src_ip)
+
+
+def _fuse_attack_labels(scan_eval: dict, pred: int, ml_name: str, ml_conf: float,
+                        force_attack: bool, *, live_traffic: bool = False) -> tuple:
+    """Return (is_attack, display_name, confidence, detection_method, fuzzy_rule)."""
+    rules_hit = bool(scan_eval.get("suspected"))
+    if live_traffic:
+        rules_hit = False
+    ml_conf_threshold = _LIVE_ML_CONF if live_traffic else _ALERT_CONF
+    ml_probe = pred == PROBE_CLASS_ID and ml_conf >= ml_conf_threshold
+    ml_other = (not live_traffic) and pred != 0 and ml_conf >= _ALERT_CONF
+    if live_traffic and _LIVE_ALERT_MODE == "scan_only":
+        ml_probe = False
+        ml_other = False
+
+    if force_attack:
+        return True, ml_name, ml_conf, "demo", ""
+
+    if rules_hit and ml_probe:
+        conf = max(float(scan_eval.get("score", 0.0)), ml_conf)
+        rule = (
+            f"IF many_ports AND syn_probes THEN {_LABEL_PORTSCAN} "
+            f"(rules+AI Probe {ml_conf:.0%})"
+        )
+        return True, _LABEL_PORTSCAN, conf, "rules+ai", rule
+
+    if rules_hit:
+        conf = max(float(scan_eval.get("score", 0.0)), _ALERT_CONF)
+        rule = f"IF unique_dst_ports >= threshold THEN {_LABEL_PORTSCAN}"
+        return True, _LABEL_PORTSCAN, conf, "rules", rule
+
+    if ml_probe:
+        rule = f"IF traffic_pattern IS PROBE THEN {_LABEL_PROBE_AI}"
+        return True, _LABEL_PROBE_AI, ml_conf, "ai", rule
+
+    if ml_other:
+        return True, ml_name, ml_conf, "ai", f"IF traffic_pattern IS ANOMALOUS THEN {ml_name}"
+
+    return False, "Normal", ml_conf, "", ""
+
+
+def _emit_ids_alert(
+    src_ip: str,
+    attack_type: str,
+    confidence: float,
+    fuzzy_rule: str,
+    flow_meta,
+    *,
+    detection_method: str = "",
+    scan_evidence: str = "",
+    blocked_override: bool | None = None,
+):
+    """Create alert row, annotate traffic, optionally auto-block."""
+    STATE["n_attacks_seen"] += 1
+    STATE["attack_counts"][attack_type] = STATE["attack_counts"].get(attack_type, 0) + 1
+    STATE["alert_count"] += 1
+
+    sev = _severity(confidence)
+    alert = {
+        "id": STATE["alert_count"],
+        "timestamp": datetime.now().isoformat(),
+        "src_ip": src_ip,
+        "attack_type": attack_type,
+        "confidence": round(confidence, 4),
+        "fuzzy_rule": fuzzy_rule,
+        "severity": sev,
+        "blocked": False,
+        "dst_ip": "—",
+        "protocol": "—",
+        "length": None,
+        "info": scan_evidence or "",
+        "detection_method": detection_method,
+        "scan_evidence": scan_evidence,
+    }
+    if flow_meta:
+        alert.update(_alert_fields_from_flow(flow_meta, src_ip))
+        if scan_evidence and not alert.get("info"):
+            alert["info"] = scan_evidence
+
+    do_block = blocked_override if blocked_override is not None else confidence > 0.95
+    if do_block and src_ip not in STATE["blocked_ips"]:
+        STATE["blocked_ips"][src_ip] = {
+            "blocked_at": datetime.now().isoformat(),
+            "attack_type": attack_type,
+            "confidence": confidence,
+            "auto_expires": True,
+        }
+        alert["blocked"] = True
+        socketio.emit(
+            "ip_blocked",
+            {"ip": src_ip, "attack_type": attack_type, "confidence": confidence},
+        )
+
+    STATE["recent_alerts"].appendleft(alert)
+    socketio.emit("new_alert", alert)
+
+
+def _maybe_raise_scan_alert(
+    scan_eval: dict,
+    scanner_ip: str,
+    flow_meta: dict | None,
+    *,
+    raise_alerts: bool = True,
+) -> bool:
+    """Raise LAN port-scan alert: scanner_ip probing victim dst_ip."""
+    if not scan_eval.get("suspected"):
+        return False
+    victim_ip = scan_eval.get("dst_ip") or (flow_meta or {}).get("dst_ip", "")
+    if not victim_ip or not _scan_tracker.can_alert(scanner_ip, victim_ip):
+        return False
+
+    evidence = scan_eval.get("scan_evidence") or scan_eval.get("reason", "")
+    conf = max(float(scan_eval.get("score", 0.0)), _ALERT_CONF)
+    display = _LABEL_PORTSCAN
+
+    if flow_meta:
+        _annotate_traffic_detection(
+            flow_meta.get("src_ip", scanner_ip),
+            flow_meta.get("dst_ip", ""),
+            flow_meta.get("src_port"),
+            flow_meta.get("dst_port"),
+            display,
+            conf,
+            _severity(conf),
+            True,
+            scan_evidence=evidence,
+        )
+    elif scanner_ip and victim_ip:
+        _annotate_traffic_detection(
+            scanner_ip, victim_ip, None, None, display, conf, _severity(conf), True,
+            scan_evidence=evidence,
+        )
+
+    if raise_alerts:
+        _scan_tracker.mark_alert(scanner_ip, victim_ip)
+        meta = dict(flow_meta) if flow_meta else {
+            "src_ip": scanner_ip,
+            "dst_ip": victim_ip,
+            "protocol": "TCP",
+            "bytes": 0,
+            "pkt_count": scan_eval.get("syn_events", 0),
+        }
+        _emit_ids_alert(
+            scanner_ip,
+            display,
+            conf,
+            f"IF LAN_port_scan THEN {display}",
+            meta,
+            detection_method="lan_scan",
+            scan_evidence=evidence,
+        )
+    return True
+
+
 def _register_packet_row(row: dict):
     """Store Wireshark-compatible packet row and push to browsers."""
     STATE['packet_no'] += 1
@@ -545,6 +865,12 @@ def _register_packet_row(row: dict):
     STATE['traffic_log'].appendleft(row)
     STATE['last_packet_at'] = datetime.now(timezone.utc).isoformat()
     socketio.emit('traffic_packet', row)
+    if row.get("protocol") == "ARP":
+        _record_arp_scan(row)
+        if _LAN_ARP_ON and STATE.get("lan_scan_packets", 0) % 10 == 0:
+            _check_lan_scans()
+    else:
+        _record_scan_from_packet(row)
 
 
 def _stop_demo_monitoring():
@@ -578,7 +904,8 @@ def _alert_fields_from_flow(flow_meta: dict, src_ip: str) -> dict:
 
 
 def _annotate_traffic_detection(src_ip, dst_ip, src_port, dst_port,
-                                detection, confidence, severity, is_attack):
+                                detection, confidence, severity, is_attack,
+                                scan_evidence=""):
     """Attach flow-level IDS result to matching packet rows (Wireshark + IDS view)."""
     for row in STATE['traffic_log']:
         if row.get('src_ip') and row.get('dst_ip'):
@@ -597,7 +924,9 @@ def _annotate_traffic_detection(src_ip, dst_ip, src_port, dst_port,
                 row['confidence'] = round(confidence, 4) if confidence is not None else None
                 row['severity'] = severity
                 row['is_attack'] = is_attack
-    socketio.emit('traffic_detection', {
+                if scan_evidence:
+                    row['scan_evidence'] = scan_evidence
+    payload = {
         'src_ip': src_ip,
         'dst_ip': dst_ip,
         'src_port': src_port,
@@ -606,7 +935,10 @@ def _annotate_traffic_detection(src_ip, dst_ip, src_port, dst_port,
         'confidence': confidence,
         'severity': severity,
         'is_attack': is_attack,
-    })
+    }
+    if scan_evidence:
+        payload['scan_evidence'] = scan_evidence
+    socketio.emit('traffic_detection', payload)
 
 
 def _make_capture_callbacks():
@@ -620,12 +952,18 @@ def _make_capture_callbacks():
         src_ip = flow_info.get('src_ip', '0.0.0.0')
         if features is None:
             return
+        scan_eval = _record_scan_from_flow(flow_info)
+        _raise_lan_scan_hit(scan_eval, flow_info)
+        pkt_count = flow_info.get('pkt_count', 0)
+        if pkt_count < _MIN_FLOW_PKTS:
+            return
         _process_flow(
             np.asarray(features, dtype=np.float32),
             src_ip=src_ip,
             force_attack=False,
             min_packets=_MIN_FLOW_PKTS,
             flow_meta=flow_info,
+            scan_eval=scan_eval,
         )
 
     return _on_packet, _on_flow
@@ -657,15 +995,25 @@ def _monitoring_loop():
 
 def _process_flow(flow_features, src_ip="0.0.0.0",
                    force_attack=False, min_packets=0, flow_meta=None,
-                   raise_alerts=True):
+                   raise_alerts=True, scan_eval=None):
     """Process one network flow through the model and emit alert if needed."""
     if flow_meta and flow_meta.get('pkt_count', 0) < min_packets:
+        if scan_eval is None:
+            scan_eval = _record_scan_from_flow(flow_meta)
+        _raise_lan_scan_hit(scan_eval, flow_meta)
         return
+
+    if scan_eval is None and flow_meta:
+        scan_eval = _record_scan_from_flow(flow_meta)
+    elif scan_eval is None:
+        scan_eval = {}
 
     STATE['n_flows_seen'] += 1
 
     if STATE['model'] is None:
-        if flow_meta:
+        if scan_eval.get("suspected") and raise_alerts:
+            _raise_lan_scan_hit(scan_eval, flow_meta)
+        elif flow_meta:
             _annotate_traffic_detection(
                 flow_meta.get('src_ip', src_ip),
                 flow_meta.get('dst_ip', ''),
@@ -678,37 +1026,69 @@ def _process_flow(flow_features, src_ip="0.0.0.0",
     try:
         import tensorflow as tf
 
-        # Pad flow features into a sequence of shape (1, seq_len, n_features)
         padded = np.tile(flow_features, (SEQUENCE_LEN, 1))
-        # Ensure feature dimension matches model expectation
         if padded.shape[1] < NUM_FEATURES:
-            padded = np.pad(padded, ((0,0),(0, NUM_FEATURES - padded.shape[1])))
+            padded = np.pad(padded, ((0, 0), (0, NUM_FEATURES - padded.shape[1])))
         elif padded.shape[1] > NUM_FEATURES:
             padded = padded[:, :NUM_FEATURES]
-        seq_features = padded[np.newaxis, :, :]  # (1, seq_len, n_features)
+        seq_features = padded[np.newaxis, :, :]
 
         logits = STATE['model'](seq_features, training=False)
-        probs  = tf.nn.softmax(logits).numpy()[0]
-        pred   = int(np.argmax(probs))
-        conf   = float(np.max(probs))
-        name   = ATTACK_NAMES.get(pred, 'Unknown')
+        probs = tf.nn.softmax(logits).numpy()[0]
+        pred = int(np.argmax(probs))
+        conf = float(np.max(probs))
+        name = ATTACK_NAMES.get(pred, 'Unknown')
+        if force_attack:
+            if conf < 0.96:
+                conf = 0.99
+            is_attack = True
+            display_name = name
+            alert_conf = conf
+            method = "demo"
+            fused_rule = ml_rule = ""
+            try:
+                anfis = STATE['model'].get_layer('anfis')
+                rules = anfis.get_top_rule_for_sample()
+                fused_rule = rules[0] if rules else f"IF traffic_pattern IS ANOMALOUS THEN {name}"
+            except Exception:
+                fused_rule = f"IF traffic_pattern IS ANOMALOUS THEN {name}"
+            sev = _severity(alert_conf)
+            evidence = ""
+            if flow_meta:
+                _annotate_traffic_detection(
+                    flow_meta.get('src_ip', src_ip),
+                    flow_meta.get('dst_ip', ''),
+                    flow_meta.get('src_port'),
+                    flow_meta.get('dst_port'),
+                    display_name, alert_conf, sev, True,
+                )
+            if raise_alerts:
+                _emit_ids_alert(
+                    src_ip, display_name, alert_conf, fused_rule, flow_meta,
+                    detection_method=method,
+                )
+            if STATE['n_flows_seen'] % 10 == 0:
+                socketio.emit('flow_stats', {
+                    'flows_seen': STATE['n_flows_seen'],
+                    'attacks_seen': STATE['n_attacks_seen'],
+                    'attack_dist': STATE['attack_counts'],
+                })
+            return
 
-        # Demo mode: forced attacks should reliably exercise response flow.
-        if force_attack and conf < 0.96:
-            conf = 0.99
-
-        # Get fuzzy rule
         try:
             anfis = STATE['model'].get_layer('anfis')
             rules = anfis.get_top_rule_for_sample()
-            rule  = rules[0] if rules else ""
+            ml_rule = rules[0] if rules else ""
         except Exception:
-            rule = f"IF traffic_pattern IS ANOMALOUS THEN {name}"
+            ml_rule = f"IF traffic_pattern IS ANOMALOUS THEN {name}"
 
-        # Real traffic: require non-normal class and sufficient confidence.
-        is_attack = force_attack or (pred != 0 and conf >= _ALERT_CONF)
-        sev = _severity(conf)
-        display_name = name if is_attack else 'Normal'
+        is_attack, display_name, alert_conf, method, fused_rule = _fuse_attack_labels(
+            scan_eval, pred, name, conf, False,
+            live_traffic=bool(flow_meta),
+        )
+
+        sev = _severity(alert_conf) if is_attack else ''
+        evidence = scan_eval.get("scan_evidence", "") if scan_eval.get("suspected") else ""
 
         if flow_meta:
             _annotate_traffic_detection(
@@ -717,58 +1097,39 @@ def _process_flow(flow_features, src_ip="0.0.0.0",
                 flow_meta.get('src_port'),
                 flow_meta.get('dst_port'),
                 display_name,
-                conf,
-                sev if is_attack else '',
+                alert_conf,
+                sev,
                 is_attack,
+                scan_evidence=evidence,
             )
 
         if is_attack and raise_alerts:
-            STATE['n_attacks_seen'] += 1
-            STATE['attack_counts'][name] = \
-                STATE['attack_counts'].get(name, 0) + 1
-            STATE['alert_count'] += 1
+            dst_for_cooldown = (
+                scan_eval.get("dst_ip") if scan_eval.get("suspected")
+                else (flow_meta or {}).get("dst_ip", "")
+            )
+            scanner = scan_eval.get("scanner_ip") or src_ip
+            if scan_eval.get("suspected") and dst_for_cooldown:
+                if not _scan_tracker.can_alert(scanner, dst_for_cooldown):
+                    return
+                _scan_tracker.mark_alert(scanner, dst_for_cooldown)
 
-            alert = {
-                'id':          STATE['alert_count'],
-                'timestamp':   datetime.now().isoformat(),
-                'src_ip':      src_ip,
-                'attack_type': name,
-                'confidence':  round(conf, 4),
-                'fuzzy_rule':  rule,
-                'severity':    _severity(conf),
-                'blocked':     False,
-                'dst_ip':      '—',
-                'protocol':    '—',
-                'length':      None,
-                'info':        '',
-            }
-            if flow_meta:
-                alert.update(_alert_fields_from_flow(flow_meta, src_ip))
+            rule_text = fused_rule or ml_rule
+            _emit_ids_alert(
+                src_ip,
+                display_name,
+                alert_conf,
+                rule_text,
+                flow_meta,
+                detection_method=method,
+                scan_evidence=evidence,
+            )
 
-            # Auto-block high-confidence attacks
-            if conf > 0.95 and src_ip not in STATE['blocked_ips']:
-                STATE['blocked_ips'][src_ip] = {
-                    'blocked_at':    datetime.now().isoformat(),
-                    'attack_type':   name,
-                    'confidence':    conf,
-                    'auto_expires':  True,
-                }
-                alert['blocked'] = True
-                socketio.emit('ip_blocked', {
-                    'ip':          src_ip,
-                    'attack_type': name,
-                    'confidence':  conf,
-                })
-
-            STATE['recent_alerts'].appendleft(alert)
-            socketio.emit('new_alert', alert)
-
-        # Emit flow stats update every 10 flows
         if STATE['n_flows_seen'] % 10 == 0:
             socketio.emit('flow_stats', {
-                'flows_seen':    STATE['n_flows_seen'],
-                'attacks_seen':  STATE['n_attacks_seen'],
-                'attack_dist':   STATE['attack_counts'],
+                'flows_seen': STATE['n_flows_seen'],
+                'attacks_seen': STATE['n_attacks_seen'],
+                'attack_dist': STATE['attack_counts'],
             })
 
     except Exception:
@@ -829,6 +1190,14 @@ if __name__ == '__main__':
     print("  FedAIDA-IDS Real-Time Dashboard")
     print(f"  http://localhost:{DASHBOARD_PORT}")
     print("="*55 + "\n")
+
+    try:
+        from capture.live_capture import SCAPY_AVAILABLE
+        if not SCAPY_AVAILABLE:
+            print("[WARNING] Scapy not installed — tshark ingest will NOT work.")
+            print("          Use: ./scripts/run_dashboard.sh  (activates .venv with scapy)")
+    except Exception:
+        pass
 
     os.makedirs(MODEL_DIR, exist_ok=True)
 

@@ -74,7 +74,11 @@ def packet_to_row(pkt, packet_no: int, epoch: Optional[float] = None) -> dict[st
             row["destination"] = "Broadcast"
         else:
             row["destination"] = hwdst
+        row["src_ip"] = getattr(arp, "psrc", "") or ""
+        row["dst_ip"] = getattr(arp, "pdst", "") or ""
         if getattr(arp, "op", 0) == 1:
+            row["arp_op"] = "who-has"
+            row["arp_target_ip"] = getattr(arp, "pdst", "") or ""
             row["info"] = (
                 f"Who has {arp.pdst}? Tell {arp.psrc}"
                 if getattr(arp, "pdst", None) and getattr(arp, "psrc", None)
@@ -109,6 +113,10 @@ def packet_to_row(pkt, packet_no: int, epoch: Optional[float] = None) -> dict[st
             row["info"] = "ICMPv6"
         elif nh == 6 and TCP in pkt:
             row["protocol"] = "TCP"
+            flags_int = int(pkt[TCP].flags)
+            row["tcp_flags"] = flags_int
+            row["is_syn"] = bool(flags_int & 0x02)
+            row["is_syn_probe"] = bool((flags_int & 0x02) and not (flags_int & 0x10))
             row["info"] = (
                 f"{pkt[TCP].sport} → {pkt[TCP].dport} "
                 f"Seq={pkt[TCP].seq} Ack={pkt[TCP].ack}"
@@ -136,6 +144,10 @@ def packet_to_row(pkt, packet_no: int, epoch: Optional[float] = None) -> dict[st
             sport, dport = int(pkt[TCP].sport), int(pkt[TCP].dport)
             row["src_port"] = sport
             row["dst_port"] = dport
+            flags_int = int(pkt[TCP].flags)
+            row["tcp_flags"] = flags_int
+            row["is_syn"] = bool(flags_int & 0x02)
+            row["is_syn_probe"] = bool((flags_int & 0x02) and not (flags_int & 0x10))
             flags = pkt[TCP].sprintf("%TCP.flags%")
             row["info"] = f"{sport} → {dport} [{flags}] Seq={pkt[TCP].seq} Ack={pkt[TCP].ack}"
         elif UDP in pkt:

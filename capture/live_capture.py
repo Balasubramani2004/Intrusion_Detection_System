@@ -238,6 +238,7 @@ class LiveCapture:
             'dst_port': flow.dst_port,
             'protocol': proto_name,
             'pkt_count': flow.pkt_count,
+            'syn_count': flow.syn_count,
             'bytes': flow.byte_count,
             'duration': round(flow.last_time - flow.start_time, 3),
             'timestamp': datetime.now().isoformat(),

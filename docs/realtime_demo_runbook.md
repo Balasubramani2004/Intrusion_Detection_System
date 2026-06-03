@@ -86,6 +86,21 @@ WSL `eth0` is **not** Windows Wi-Fi — use Section 3 for laptop Wi-Fi.
 - Verify **Blocked IPs** when confidence > 95%
 - **Unblock** single IP and **Unblock All**
 
+### 5b) LAN port-scan detection (anyone on same Wi-Fi)
+
+With **Start WiFi Capture (tshark)** active and model loaded:
+
+1. Note **your laptop Wi-Fi IP** (e.g. `192.168.1.42`).
+2. Run `scripts/verify_lan_scan_detection.py` in WSL (logic check, no nmap).
+3. Teammate (lab permission only): `nmap -sS <your-laptop-ip>`
+4. Within **~12 seconds** expect:
+   - Live Traffic: many TCP `[SYN]` rows to your IP
+   - Alert: **PortScan (nmap suspected)**, Method **lan_scan**, Source = scanner IP
+   - Banner: `LAN scan watch: ON (this PC: …)`
+5. For host discovery: `nmap -sn 192.168.1.0/24` may trigger **ARP sweep** (Method **arp**).
+
+Scans between two *other* devices may not appear if the AP uses client isolation.
+
 ---
 
 ## 6) Export evidence
@@ -105,6 +120,7 @@ Save JSON for viva audit trail.
 - [ ] **Start WiFi Capture (tshark)** active
 - [ ] Live Traffic rows match Wireshark for same moment
 - [ ] Simulate attack works if live attack demo needed
+- [ ] (Optional) Real `nmap -sS` triggers **PortScan (nmap suspected)** on live capture
 - [ ] `GET /api/export_log` saved
 
 ---

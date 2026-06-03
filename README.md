@@ -6,6 +6,8 @@
 **Institution:** Cambridge Institute of Technology, Bengaluru  
 **Target Journal:** Future Generation Computer Systems (Elsevier, IF 7.5)
 
+**Full technical report:** [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md) — algorithms, models, datasets, metrics, outputs, LAN scan detection, and runbook.
+
 ---
 
 ## Novelty Claims

@@ -154,7 +154,12 @@ class TsharkIngest:
         try:
             if dest.exists():
                 dest = self.processed_dir / f"{path.stem}_{int(time.time())}{path.suffix}"
-            path.rename(dest)
+            try:
+                path.rename(dest)
+            except OSError:
+                import shutil
+                shutil.copy2(path, dest)
+                path.unlink(missing_ok=True)
         except OSError as e:
             logger.warning("Could not move %s to processed: %s", path, e)
 
@@ -179,8 +184,7 @@ class TsharkIngest:
             return 0
 
     def _on_flow(self, flow_info: dict):
-        if flow_info.get("pkt_count", 0) < self.min_flow_packets:
-            return
+        """Forward all flows; dashboard applies ML min-packet gate and scan rules."""
         if self.callback:
             self.callback(flow_info)
 
@@ -266,10 +270,16 @@ class TsharkIngest:
         self.running = False
 
     def get_status(self) -> dict:
+        incoming_files = []
+        try:
+            incoming_files = [p.name for p in self._list_candidates()[:8]]
+        except OSError:
+            pass
         return {
             "active": self.running,
             "incoming_dir": str(self.incoming_dir),
             "processed_dir": str(self.processed_dir),
+            "incoming_files": incoming_files,
             "stats": dict(self.stats),
         }
 
