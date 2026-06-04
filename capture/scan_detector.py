@@ -17,6 +17,48 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from capture.network_utils import is_private_lan_ip
 
 
+def _enrich_fuzzy_scan(
+    hit: Dict[str, Any],
+    *,
+    unique_ports: int,
+    syn_events: int,
+    total_events: int,
+    span_sec: float,
+    victim_is_local: bool,
+) -> Dict[str, Any]:
+    """Attach fuzzy_rule / fuzzy_score when enabled; never changes suspected by default."""
+    try:
+        from config import FUZZY_SCAN_ENABLED, FUZZY_SCAN_EXPLAIN_ONLY
+    except ImportError:
+        return hit
+    if not FUZZY_SCAN_ENABLED:
+        return hit
+
+    from capture.fuzzy_scan import evaluate_port_scan_fuzzy
+
+    fz = evaluate_port_scan_fuzzy(
+        unique_ports=unique_ports,
+        syn_events=syn_events,
+        total_events=total_events,
+        span_sec=span_sec,
+        victim_is_local=victim_is_local,
+        detection_mode=hit.get("detection_mode", ""),
+    )
+    hit["fuzzy_score"] = fz.get("score", 0.0)
+    hit["fuzzy_rule"] = fz.get("rule", "")
+    hit["fuzzy_top_rule"] = fz.get("top_rule", "")
+
+    if not FUZZY_SCAN_EXPLAIN_ONLY:
+        try:
+            from config import SCAN_HEURISTIC_THRESHOLD
+            thresh = float(SCAN_HEURISTIC_THRESHOLD)
+        except ImportError:
+            thresh = 0.78
+        if float(fz.get("score", 0.0)) < thresh:
+            hit["suspected"] = False
+    return hit
+
+
 @dataclass
 class _ScanEvent:
     ts: float
@@ -158,7 +200,7 @@ class ScanTracker:
                     f"LAN scan: {scanner_ip} probed {len(burst_ports)} ports on "
                     f"{victim_tag} in {span_int}s"
                 )
-                return {
+                hit = {
                     "suspected": True,
                     "score": 0.93,
                     "reason": evidence,
@@ -171,6 +213,14 @@ class ScanTracker:
                     "detection_mode": "lan_burst",
                     "victim_is_local": victim_ip in self.local_ips,
                 }
+                return _enrich_fuzzy_scan(
+                    hit,
+                    unique_ports=len(burst_ports),
+                    syn_events=burst_syn,
+                    total_events=len(burst_evs),
+                    span_sec=float(span),
+                    victim_is_local=victim_ip in self.local_ips,
+                )
 
         ports = {e.dst_port for e in evs if self._count_port(e.dst_port)}
         unique_ports = len(ports)
@@ -202,7 +252,7 @@ class ScanTracker:
             f"LAN scan: {scanner_ip} probed {unique_ports} ports on "
             f"{victim_tag} in {span_int}s"
         )
-        return {
+        hit = {
             "suspected": True,
             "score": round(score, 4),
             "reason": evidence,
@@ -215,6 +265,14 @@ class ScanTracker:
             "detection_mode": "lan_window",
             "victim_is_local": victim_ip in self.local_ips,
         }
+        return _enrich_fuzzy_scan(
+            hit,
+            unique_ports=unique_ports,
+            syn_events=syn_events,
+            total_events=len(evs),
+            span_sec=float(span),
+            victim_is_local=victim_ip in self.local_ips,
+        )
 
     def evaluate(self, scanner_ip: str) -> Dict[str, Any]:
         """Best scan hypothesis for one scanner IP."""

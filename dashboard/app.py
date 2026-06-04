@@ -667,7 +667,9 @@ def _fuse_attack_labels(scan_eval: dict, pred: int, ml_name: str, ml_conf: float
 
     if rules_hit:
         conf = max(float(scan_eval.get("score", 0.0)), _ALERT_CONF)
-        rule = f"IF unique_dst_ports >= threshold THEN {_LABEL_PORTSCAN}"
+        rule = scan_eval.get("fuzzy_rule") or (
+            f"IF unique_dst_ports >= threshold THEN {_LABEL_PORTSCAN}"
+        )
         return True, _LABEL_PORTSCAN, conf, "rules", rule
 
     if ml_probe:
@@ -788,11 +790,12 @@ def _maybe_raise_scan_alert(
             "bytes": 0,
             "pkt_count": scan_eval.get("syn_events", 0),
         }
+        fuzzy_rule = scan_eval.get("fuzzy_rule") or f"IF LAN_port_scan THEN {display}"
         _emit_ids_alert(
             scanner_ip,
             display,
             conf,
-            f"IF LAN_port_scan THEN {display}",
+            fuzzy_rule,
             meta,
             detection_method="lan_scan",
             scan_evidence=evidence,

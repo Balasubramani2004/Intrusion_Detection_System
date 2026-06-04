@@ -68,6 +68,9 @@ SCAN_LOCAL_BURST_MIN_PORTS = 6
 SCAN_ALERT_COOLDOWN_SEC = 40
 SCAN_HEURISTIC_THRESHOLD = 0.78
 SCAN_EXCLUDE_PORTS = frozenset({53, 80, 443, 8080, 8443, 993, 587, 22, 8000, 8888})
+# Fuzzy port-scan layer: explain-only (same alerts/thresholds; richer IF-THEN text).
+FUZZY_SCAN_ENABLED = True
+FUZZY_SCAN_EXPLAIN_ONLY = True  # never block alerts — only attach fuzzy_rule on hits
 LAN_ARP_SWEEP_ENABLED = False
 LAN_ARP_WINDOW_SEC = 25
 LAN_ARP_MIN_HOSTS = 8
