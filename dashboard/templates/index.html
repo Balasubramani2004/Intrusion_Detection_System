@@ -9,35 +9,23 @@
 * { margin:0; padding:0; box-sizing:border-box; }
 body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; font-size:13px; }
 
-/* ── Top bar ── */
 .topbar { background:#162035; padding:10px 20px; display:flex; align-items:center;
           justify-content:space-between; border-bottom:2px solid #1565C0; }
 .topbar h1 { font-size:18px; color:#1E88E5; letter-spacing:1px; }
 .topbar .meta { color:#90A4AE; font-size:11px; }
-.status-dot { display:inline-block; width:8px; height:8px; border-radius:50%;
-              margin-right:6px; }
-.dot-green { background:#43A047; animation:pulse 1.5s infinite; }
-.dot-red   { background:#E53935; }
-.dot-yellow{ background:#FB8C00; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
-/* ── Grid ── */
-.grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;
-        padding:12px; }
-.card { background:#162035; border:1px solid #1e3a5f; border-radius:6px;
-        padding:12px; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:12px; }
+.card { background:#162035; border:1px solid #1e3a5f; border-radius:6px; padding:12px; }
 .card h3 { color:#1E88E5; font-size:12px; letter-spacing:1px;
            text-transform:uppercase; margin-bottom:10px;
            padding-bottom:6px; border-bottom:1px solid #1e3a5f; }
 
-/* ── Stat boxes ── */
 .stats-row { display:flex; gap:10px; padding:0 12px 12px; }
 .stat-box  { flex:1; background:#162035; border:1px solid #1e3a5f;
              border-radius:6px; padding:12px; text-align:center; }
 .stat-box .val { font-size:28px; font-weight:bold; color:#1E88E5; }
 .stat-box .lbl { font-size:10px; color:#90A4AE; margin-top:4px; text-transform:uppercase; }
 
-/* ── Alert table ── */
 .alert-table { width:100%; border-collapse:collapse; font-size:11px; }
 .alert-table th { background:#1a2d4a; color:#90A4AE; padding:6px 8px;
                   text-align:left; position:sticky; top:0; }
@@ -51,7 +39,6 @@ body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; fon
 .badge-medium { background:#e65100; color:#fff; }
 .badge-low    { background:#1565C0; color:#fff; }
 .badge-blocked{ background:#6a1b9a; color:#fff; }
-.badge-benign { background:#1b5e20; color:#fff; }
 #alert-container { max-height:320px; overflow-y:auto; }
 #traffic-container { max-height:380px; overflow-y:auto; }
 .traffic-table { width:100%; border-collapse:collapse; font-size:10px; font-family:Consolas,'Segoe UI',monospace; }
@@ -64,33 +51,7 @@ body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; fon
 .capture-banner.ok { background:rgba(67,160,71,0.12); border-color:#43A047; color:#a5d6a7; }
 .capture-banner.warn { background:rgba(251,140,0,0.12); border-color:#FB8C00; color:#ffcc80; }
 .capture-banner.err { background:rgba(229,57,53,0.12); border-color:#E53935; color:#ef9a9a; }
-.capture-banner a { color:#64B5F6; }
-.setup-checklist { font-size:11px; color:#90A4AE; margin-top:8px; }
-.setup-checklist summary { cursor:pointer; color:#1E88E5; }
-.setup-checklist ol { margin:8px 0 0 18px; line-height:1.6; }
 
-/* ── Node grid ── */
-.node-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-.node-card { background:#0f1a2e; border-radius:5px; padding:8px;
-             border:1px solid #1e3a5f; text-align:center; }
-.node-card .node-id { font-size:10px; color:#90A4AE; }
-.node-card .trust-val { font-size:18px; font-weight:bold; }
-.node-card .trust-bar-bg { background:#1a2d4a; height:4px;
-                            border-radius:2px; margin-top:4px; }
-.node-card .trust-bar    { height:4px; border-radius:2px; transition:width 0.5s; }
-.trust-green { color:#43A047; }
-.trust-yellow{ color:#FB8C00; }
-.trust-red   { color:#E53935; }
-.quarantine-badge { font-size:9px; background:#6a1b9a; color:#fff;
-                     padding:1px 5px; border-radius:3px; display:block;
-                     margin-top:3px; }
-
-/* ── FL progress ── */
-#fl-round-val   { font-size:24px; font-weight:bold; color:#1E88E5; }
-#fl-f1-val      { font-size:24px; font-weight:bold; color:#43A047; }
-#fl-status-msg  { color:#90A4AE; font-size:11px; margin-top:4px; }
-
-/* ── Blocked IPs ── */
 .blocked-entry { display:flex; justify-content:space-between;
                  align-items:center; padding:5px 0;
                  border-bottom:1px solid #1a2d4a; }
@@ -98,29 +59,21 @@ body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; fon
 .blocked-entry .unblock-btn {
   background:#6a1b9a; color:#fff; border:none; border-radius:3px;
   padding:2px 8px; cursor:pointer; font-size:10px; }
-.blocked-entry .unblock-btn:hover { background:#9c27b0; }
 #unblock-all-btn {
   background:#1565C0; color:#fff; border:none; border-radius:4px;
-  padding:5px 12px; cursor:pointer; font-size:11px; margin-top:8px;
-  width:100%; }
+  padding:5px 12px; cursor:pointer; font-size:11px; margin-top:8px; width:100%; }
 
-/* ── Controls ── */
-.controls { display:flex; gap:8px; flex-wrap:wrap; padding:0 12px 12px; }
+.controls { display:flex; gap:8px; flex-wrap:wrap; padding:10px 12px 0; align-items:center; }
 .btn { padding:7px 16px; border-radius:4px; border:none; cursor:pointer;
        font-size:12px; font-weight:bold; }
-.btn-start  { background:#1565C0; color:#fff; }
 .btn-stop   { background:#C62828; color:#fff; }
-.btn-demo   { background:#2E7D32; color:#fff; }
-.btn-attack { background:#E65100; color:#fff; }
 .btn-load   { background:#4A148C; color:#fff; }
+.btn-wifi   { background:#1565C0; color:#fff; }
 
-/* ── Fuzzy rule display ── */
 .fuzzy-rule { font-family:monospace; font-size:10px; color:#80CBC4;
               background:#0d1e35; padding:4px 8px; border-radius:3px;
-              border-left:3px solid #00897B; margin-top:3px;
-              word-break:break-all; }
+              border-left:3px solid #00897B; margin-top:3px; word-break:break-all; }
 
-/* ── Scrollbar ── */
 ::-webkit-scrollbar { width:5px; }
 ::-webkit-scrollbar-track { background:#0f1a2e; }
 ::-webkit-scrollbar-thumb { background:#1e3a5f; border-radius:3px; }
@@ -128,95 +81,57 @@ body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; fon
 </head>
 <body>
 
-<!-- Top Bar -->
 <div class="topbar">
   <div>
-    <h1>⚡ FedAIDA-IDS — Real-Time Intrusion Detection</h1>
-    <div class="meta">Federated Self-Learning Neuro-Fuzzy IDS for IoT Networks</div>
+    <h1>FedAIDA-IDS — Real-Time Intrusion Detection</h1>
+    <div class="meta">Wi-Fi capture + LAN port-scan detection</div>
   </div>
-  <div style="text-align:right">
-    <span class="status-dot dot-red" id="monitor-dot"></span>
-    <span id="monitor-status">Monitoring Inactive</span>
+  <div style="text-align:right;font-size:12px;">
+    <span id="model-status" style="color:#FB8C00">Model not loaded</span>
     &nbsp;|&nbsp;
-    <span id="model-status" style="color:#FB8C00">Model Not Loaded</span>
-    &nbsp;|&nbsp;
-    <span id="capture-status" style="color:#90A4AE">Capture Inactive</span>
-    &nbsp;|&nbsp;
-    <span id="tshark-status" style="color:#90A4AE">WiFi tshark Inactive</span>
+    <span id="tshark-status" style="color:#90A4AE">Wi-Fi capture off</span>
     &nbsp;|&nbsp;
     <span id="clock" style="color:#90A4AE"></span>
   </div>
 </div>
 
-<!-- Controls -->
-<div class="controls" style="padding:10px 12px 0;">
-  <input id="api-key-input" type="password" placeholder="API key"
-         style="padding:7px 10px;border-radius:4px;border:1px solid #1e3a5f;background:#0f1a2e;color:#e0e8f5;">
-  <input id="capture-iface-input" type="text" placeholder="Capture iface (eth0)"
-         style="padding:7px 10px;border-radius:4px;border:1px solid #1e3a5f;background:#0f1a2e;color:#e0e8f5;">
-  <button class="btn btn-load"   onclick="loadModel()">📦 Load Model</button>
-  <button class="btn btn-start"  onclick="startMonitoring()">▶ Start Monitoring</button>
-  <button class="btn btn-stop"   onclick="stopMonitoring()">⏹ Stop</button>
-  <button class="btn btn-demo"   onclick="startLiveCapture()" style="background:#00695C">📡 Start Live Capture</button>
-  <button class="btn btn-stop"   onclick="stopLiveCapture()">⏹ Stop Capture</button>
-  <button class="btn btn-demo"   onclick="startTsharkIngest()" style="background:#1565C0">📶 Start WiFi Capture (tshark)</button>
-  <button class="btn btn-stop"   onclick="stopTsharkIngest()">⏹ Stop WiFi tshark</button>
-  <button class="btn btn-attack" onclick="simulateAttack('PortScan')">🔴 Simulate PortScan</button>
-  <button class="btn btn-attack" onclick="simulateAttack('DDoS')" style="background:#7B1FA2">🔴 Simulate DDoS</button>
-  <button class="btn btn-demo"   onclick="simulateAttack('Reconnaissance')">🟡 Simulate Recon</button>
+<div class="controls">
+  <button class="btn btn-load" onclick="loadModel()">Load model</button>
+  <button class="btn btn-wifi" onclick="startTsharkIngest()">Start Wi-Fi capture</button>
+  <button class="btn btn-stop" onclick="stopTsharkIngest()">Stop Wi-Fi capture</button>
 </div>
 
-<!-- Stats Row -->
-<div class="stats-row" style="margin-top:10px;">
+<div class="stats-row">
+  <div class="stat-box">
+    <div class="val" id="stat-packets">0</div>
+    <div class="lbl">Packets in table (max 1000)</div>
+  </div>
   <div class="stat-box">
     <div class="val" id="stat-flows">0</div>
-    <div class="lbl">Flows Analysed</div>
+    <div class="lbl">Flows processed</div>
   </div>
   <div class="stat-box">
     <div class="val" id="stat-alerts" style="color:#E53935;">0</div>
-    <div class="lbl">Alerts Raised</div>
+    <div class="lbl">Alerts raised</div>
   </div>
   <div class="stat-box">
     <div class="val" id="stat-blocked" style="color:#7B1FA2;">0</div>
-    <div class="lbl">IPs Blocked</div>
-  </div>
-  <div class="stat-box">
-    <div class="val" id="fl-round-val">0</div>
-    <div class="lbl">FL Round</div>
-  </div>
-  <div class="stat-box">
-    <div class="val" id="fl-f1-val">—</div>
-    <div class="lbl">Global F1</div>
+    <div class="lbl">IPs blocked</div>
   </div>
 </div>
 
-<!-- Capture status banner -->
 <div id="capture-banner" class="capture-banner err">
-  <span id="capture-banner-text">No real packets captured. For Wi-Fi: run Windows tshark script, then click <b>Start WiFi Capture (tshark)</b> — not Start Monitoring (demo only).</span>
+  <span id="capture-banner-text">Run <code>scripts/start_wifi_tshark_windows.ps1</code> on Windows, then click <b>Start Wi-Fi capture</b>.</span>
   <span id="capture-banner-stats" style="display:block;margin-top:4px;font-size:10px;color:#90A4AE;"></span>
 </div>
 
-<!-- Wireshark-style live traffic (above alert feed) -->
 <div id="live-traffic-section" style="padding:0 12px 12px;">
   <div class="card">
-    <h3 id="live-traffic-anchor">Live Traffic — Wireshark View + IDS</h3>
+    <h3 id="live-traffic-anchor">Live traffic</h3>
     <div style="color:#90A4AE;font-size:10px;margin-bottom:8px;">
-      Same columns as Wireshark: No, Time, Source, Destination, Protocol, Length, Info.
-      Times are shown in <b>your PC local timezone</b> (capture runs in WSL/UTC).
-      Real Wi-Fi requires <b>Start WiFi Capture (tshark)</b> + Windows script (WSL eth0 is not your Wi-Fi).
+      Newest packets at top. Port-scan alerts fire when someone probes your PC (see banner for your IP).
     </div>
-    <details class="setup-checklist">
-      <summary>Wi-Fi capture setup checklist</summary>
-      <ol>
-        <li>Windows PowerShell (Admin): <code>tshark -D</code> — note Wi-Fi interface number</li>
-        <li>Run <code>scripts/start_wifi_tshark_windows.ps1</code> on the host</li>
-        <li>WSL: <code>export DASHBOARD_API_KEY=demo-key</code> and restart <code>python dashboard/app.py</code></li>
-        <li>Load Model → <b>Start WiFi Capture (tshark)</b></li>
-        <li>Compare this table with Wireshark side-by-side</li>
-      </ol>
-      See <code>docs/wireshark_wifi_capture.md</code> in the project for full steps.
-    </details>
-    <div id="traffic-container" style="margin-top:10px;">
+    <div id="traffic-container">
       <table class="traffic-table">
         <thead>
           <tr>
@@ -227,7 +142,7 @@ body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; fon
         </thead>
         <tbody id="traffic-tbody">
           <tr><td colspan="10" style="text-align:center;color:#546E7A;padding:16px;">
-            No packets yet — start WiFi tshark or live capture
+            No packets yet
           </td></tr>
         </tbody>
       </table>
@@ -235,91 +150,53 @@ body { background:#0f1a2e; color:#e0e8f5; font-family:'Segoe UI',sans-serif; fon
   </div>
 </div>
 
-<!-- Main Grid -->
 <div class="grid">
-
-  <!-- Alert Feed — spans 2 columns -->
   <div class="card" style="grid-column:span 2;">
-    <h3>Live Alert Feed</h3>
+    <h3>Live alert feed</h3>
     <div id="alert-container">
       <table class="alert-table">
         <thead>
           <tr>
             <th>#</th><th>Time</th><th>Source</th><th>Destination</th>
             <th>Protocol</th><th>Length</th>
-            <th>Attack Type</th><th>Method</th><th>Confidence</th>
+            <th>Attack type</th><th>Method</th><th>Confidence</th>
             <th>Severity</th><th>Status</th>
           </tr>
         </thead>
         <tbody id="alert-tbody">
           <tr><td colspan="11" style="text-align:center;color:#546E7A;padding:20px;">
-            No alerts yet — real port-scan or Simulate buttons only
+            No alerts yet
           </td></tr>
         </tbody>
       </table>
     </div>
-    <div id="last-rule" class="fuzzy-rule" style="margin-top:8px;">
-      Fuzzy rule will appear here when an attack is detected
-    </div>
+    <div id="last-rule" class="fuzzy-rule" style="margin-top:8px;"></div>
   </div>
 
-  <!-- Node Trust Scores -->
   <div class="card">
-    <h3>🛡 Node Trust Scores (IRBA)</h3>
-    <div class="node-grid" id="node-grid">
-      <!-- Filled by JS -->
-    </div>
-    <div id="fl-status-msg" style="margin-top:8px;"></div>
-  </div>
-
-  <!-- Blocked IPs -->
-  <div class="card">
-    <h3>🚫 Blocked IPs</h3>
+    <h3>Blocked IPs</h3>
     <div id="blocked-list" style="max-height:200px;overflow-y:auto;">
       <div style="color:#546E7A;text-align:center;padding:20px;">No IPs blocked</div>
     </div>
-    <button id="unblock-all-btn" onclick="unblockAll()">Unblock All</button>
+    <button id="unblock-all-btn" onclick="unblockAll()">Unblock all</button>
   </div>
 
-  <!-- Attack Distribution -->
   <div class="card">
-    <h3>📊 Attack Distribution</h3>
-    <div id="attack-dist" style="font-size:12px;"></div>
+    <h3>Attack counts</h3>
+    <div id="attack-dist" style="font-size:12px;color:#546E7A;">No attacks yet</div>
   </div>
-
-  <!-- FL Progress -->
-  <div class="card">
-    <h3>🔗 Federated Learning Status</h3>
-    <div style="display:flex;gap:16px;align-items:center;margin-bottom:10px;">
-      <div>
-        <div id="fl-round-display" style="font-size:32px;font-weight:bold;color:#1E88E5;">0</div>
-        <div style="color:#90A4AE;font-size:10px;">CURRENT ROUND</div>
-      </div>
-      <div>
-        <div id="fl-f1-display" style="font-size:32px;font-weight:bold;color:#43A047;">—</div>
-        <div style="color:#90A4AE;font-size:10px;">AVG F1 SCORE</div>
-      </div>
-    </div>
-    <div id="drift-nodes" style="font-size:11px;color:#FB8C00;"></div>
-    <div id="quarantine-nodes" style="font-size:11px;color:#E53935;margin-top:4px;"></div>
-  </div>
-
 </div>
 
 <script>
 const socket = io();
-const trafficRows = new Map();
+const API_KEY = 'demo-key';
+const trafficByNo = new Map();
 const TRAFFIC_MAX = 300;
 let alertCount = 0;
 let blockedIPs = {};
 
 function authHeaders(extra = {}) {
-  const apiKey = document.getElementById('api-key-input').value.trim();
-  return {
-    'Content-Type': 'application/json',
-    ...(apiKey ? {'X-API-Key': apiKey} : {}),
-    ...extra
-  };
+  return { 'Content-Type': 'application/json', 'X-API-Key': API_KEY, ...extra };
 }
 
 function esc(s) {
@@ -327,7 +204,6 @@ function esc(s) {
   return String(s).replace(/</g, '&lt;');
 }
 
-/** PCAP/server times are UTC; show in browser local time (matches Wireshark on this PC). */
 function formatLocalTime(epochSec, isoUtc) {
   let d = null;
   if (epochSec != null && !Number.isNaN(epochSec)) {
@@ -352,7 +228,7 @@ function renderAlertRow(alert) {
     : '<span class="badge badge-low">ALERT</span>';
   row.innerHTML = `
     <td>${alert.id || ''}</td>
-    <td>${alert.timestamp ? new Date(alert.timestamp).toLocaleTimeString() : ''}</td>
+    <td title="Detection time">${formatLocalTime(alert.timestamp_epoch, alert.timestamp)}</td>
     <td style="font-family:monospace">${esc(alert.src_ip)}</td>
     <td style="font-family:monospace">${esc(alert.dst_ip)}</td>
     <td>${esc(alert.protocol)}</td>
@@ -370,43 +246,41 @@ function updateCaptureBanner(status) {
   const text = document.getElementById('capture-banner-text');
   const stats = document.getElementById('capture-banner-stats');
   const pkts = status.traffic_packets || 0;
-  const last = status.last_packet_at || '';
   const err = (status.tshark_stats && status.tshark_stats.last_error) || status.tshark_stale_message || '';
-  const live = status.tshark_active || status.capture_active;
+  const live = status.tshark_active;
   const hasPkts = pkts > 0;
 
   let cls = 'err';
-  let msg = 'No real packets captured. For Wi-Fi: run Windows tshark script, then click <b>Start WiFi Capture (tshark)</b>.';
-  if (status.monitoring && !hasPkts && !live) {
-    cls = 'warn';
-    msg = '<b>Demo mode active</b> — Start Monitoring uses synthetic fake IPs, not Wi-Fi. Stop it and use <b>Start WiFi Capture (tshark)</b> for Protocol/Destination/Length.';
-  } else if (live && hasPkts) {
+  let msg = 'Run <code>scripts/start_wifi_tshark_windows.ps1</code> on Windows, then click <b>Start Wi-Fi capture</b>.';
+  if (live && hasPkts) {
     cls = 'ok';
-    msg = 'Live capture ingesting packets — compare the table below with Wireshark.';
+    msg = 'Wi-Fi capture active — live traffic and port-scan detection running.';
   } else if (live && !hasPkts) {
     cls = 'warn';
-    msg = 'Capture started but no packets yet. Run <code>start_wifi_tshark_windows.ps1</code> on Windows and check <code>capture/incoming/</code>.';
+    msg = 'Wi-Fi ingest started — waiting for packets. Check Windows tshark and <code>capture/incoming/</code>.';
   } else if (hasPkts) {
     cls = 'ok';
-    msg = 'Packets buffered — scroll to Live Traffic table above.';
+    msg = 'Packets buffered — scroll to live traffic table.';
   }
 
   banner.className = 'capture-banner ' + cls;
   text.innerHTML = msg;
-  let statLine = `Packets buffered: ${pkts}`;
+  let statLine = `Packets in table: ${pkts}`;
   if (status.lan_scan_enabled) {
-    const locals = (status.local_ips || []).join(', ') || 'detecting...';
-    statLine += ` | LAN scan watch: ON (this PC: ${locals})`;
+    const locals = (status.local_ips || []).join(', ') || 'detecting…';
+    statLine += ` | Your IP(s): ${locals}`;
+    if (status.lan_scan_victim_only) statLine += ' | Alerts: scans to your PC only';
   }
-  if (last) statLine += ` | Last packet: ${formatLocalTime(null, last)} (local)`;
+  if (status.last_packet_epoch != null) {
+    statLine += ` | Last packet: ${formatLocalTime(status.last_packet_epoch, null)}`;
+  }
   if (err) statLine += ` | ${err}`;
   stats.textContent = statLine;
 }
 
 function renderTrafficRow(row) {
   const tr = document.createElement('tr');
-  const attack = row.is_attack;
-  tr.className = attack ? 'traffic-row-attack' : 'traffic-row-normal';
+  tr.className = row.is_attack ? 'traffic-row-attack' : 'traffic-row-normal';
   tr.dataset.no = row.no;
   const conf = row.confidence != null ? (row.confidence * 100).toFixed(1) + '%' : '';
   tr.innerHTML = `
@@ -417,56 +291,88 @@ function renderTrafficRow(row) {
     <td>${row.protocol ?? ''}</td>
     <td>${row.length ?? ''}</td>
     <td title="${(row.info || '').replace(/"/g, '&quot;')}">${row.info ?? ''}</td>
-    <td title="${esc(row.scan_evidence || '')}">${row.detection || (row.protocol === 'ARP' ? '—' : '')}</td>
+    <td title="${esc(row.scan_evidence || '')}">${row.detection || ''}</td>
     <td>${conf}</td>
     <td>${row.severity || ''}</td>`;
   return tr;
 }
 
-function prependTrafficRow(row) {
+function trafficSortKey(row) {
+  const t = Number(row.time_epoch);
+  const n = Number(row.no);
+  return [(Number.isFinite(t) ? t : 0), (Number.isFinite(n) ? n : 0)];
+}
+
+function compareTrafficRows(a, b) {
+  const [ta, na] = trafficSortKey(a);
+  const [tb, nb] = trafficSortKey(b);
+  if (tb !== ta) return tb - ta;
+  return nb - na;
+}
+
+function renderTrafficTable() {
   const tbody = document.getElementById('traffic-tbody');
-  if (tbody.querySelector('td[colspan]')) tbody.innerHTML = '';
-  const tr = renderTrafficRow(row);
-  tbody.prepend(tr);
-  trafficRows.set(row.no, tr);
-  while (trafficRows.size > TRAFFIC_MAX) {
-    const oldest = trafficRows.keys().next().value;
-    const oldTr = trafficRows.get(oldest);
-    if (oldTr && oldTr.parentNode) oldTr.remove();
-    trafficRows.delete(oldest);
+  const sorted = [...trafficByNo.values()].sort(compareTrafficRows);
+  if (!sorted.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#546E7A;padding:16px;">No packets yet</td></tr>';
+    return;
   }
+  tbody.innerHTML = '';
+  sorted.forEach(row => tbody.appendChild(renderTrafficRow(row)));
+}
+
+function upsertTrafficRow(row) {
+  if (row == null || row.no == null) return;
+  trafficByNo.set(row.no, row);
+  while (trafficByNo.size > TRAFFIC_MAX) {
+    const oldestNo = [...trafficByNo.keys()].sort((a, b) => a - b)[0];
+    trafficByNo.delete(oldestNo);
+  }
+  renderTrafficTable();
 }
 
 function applyTrafficDetection(d) {
-  for (const tr of trafficRows.values()) {
-    const cells = tr.querySelectorAll('td');
-    if (cells.length < 10) continue;
-    const src = cells[2].textContent;
-    const dst = cells[3].textContent;
-    const match = (src === d.src_ip && dst === d.dst_ip) || (src === d.dst_ip && dst === d.src_ip);
+  for (const row of trafficByNo.values()) {
+    const sip = row.src_ip || row.source || '';
+    const dip = row.dst_ip || row.destination || '';
+    const match = (sip === d.src_ip && dip === d.dst_ip)
+      || (sip === d.dst_ip && dip === d.src_ip);
     if (match) {
-      cells[7].textContent = d.detection || '';
-      if (d.scan_evidence) cells[7].title = d.scan_evidence;
-      cells[8].textContent = d.confidence != null ? (d.confidence * 100).toFixed(1) + '%' : '';
-      cells[9].textContent = d.severity || '';
-      if (d.is_attack) tr.className = 'traffic-row-attack';
+      row.detection = d.detection || '';
+      row.confidence = d.confidence;
+      row.severity = d.severity || '';
+      row.is_attack = d.is_attack;
+      if (d.scan_evidence) row.scan_evidence = d.scan_evidence;
     }
   }
+  renderTrafficTable();
 }
 
 async function refreshTraffic() {
   try {
-    const res = await fetch('/api/traffic?limit=150');
+    const res = await fetch('/api/traffic?limit=300');
     const data = await res.json();
-    const packets = data.packets || [];
-    if (!packets.length) return;
-    const tbody = document.getElementById('traffic-tbody');
-    tbody.innerHTML = '';
-    trafficRows.clear();
-    packets.slice().reverse().forEach(row => prependTrafficRow(row));
+    (data.packets || []).forEach(row => {
+      if (row.no != null) trafficByNo.set(row.no, row);
+    });
+    while (trafficByNo.size > TRAFFIC_MAX) {
+      const oldestNo = [...trafficByNo.keys()].sort((a, b) => a - b)[0];
+      trafficByNo.delete(oldestNo);
+    }
+    renderTrafficTable();
   } catch (e) {
     console.warn('Traffic refresh failed', e);
   }
+}
+
+function updateStatsFromStatus(status) {
+  document.getElementById('stat-packets').textContent = status.traffic_packets || 0;
+  const flows = status.tshark_active
+    ? (status.tshark_flows ?? (status.tshark_stats && status.tshark_stats.flows) ?? 0)
+    : (status.flows_seen || 0);
+  document.getElementById('stat-flows').textContent = flows;
+  document.getElementById('stat-alerts').textContent = status.alert_count || 0;
+  document.getElementById('stat-blocked').textContent = Object.keys(blockedIPs || {}).length;
 }
 
 async function refreshSnapshot() {
@@ -480,102 +386,113 @@ async function refreshSnapshot() {
     const alerts = await alertsRes.json();
     blockedIPs = await blockedRes.json();
 
-    document.getElementById('stat-flows').textContent = status.flows_seen || 0;
-    document.getElementById('stat-alerts').textContent = status.alert_count || 0;
-    document.getElementById('stat-blocked').textContent = Object.keys(blockedIPs || {}).length;
-    document.getElementById('fl-round-val').textContent = status.fl_round || 0;
-    document.getElementById('fl-round-display').textContent = status.fl_round || 0;
-    document.getElementById('monitor-status').textContent = status.monitoring ? 'Monitoring Active' : 'Monitoring Inactive';
-    document.getElementById('monitor-dot').className = status.monitoring ? 'status-dot dot-green' : 'status-dot dot-red';
+    alertCount = status.alert_count || 0;
+    updateStatsFromStatus(status);
     updateTsharkStatusEl(status.tshark_active, status.tshark_stats);
     updateCaptureBanner(status);
-    if (status.capture_active) {
-      document.getElementById('capture-status').textContent =
-        `Capture Active (${status.capture_interface || 'default'})`;
-      document.getElementById('capture-status').style.color = '#43A047';
-    }
-    initNodes(status.trust_scores || Array(9).fill(0.5), status.quarantined || []);
     renderBlocked();
 
     const tbody = document.getElementById('alert-tbody');
     tbody.innerHTML = '';
     if (!alerts || alerts.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#546E7A;padding:20px;">No alerts yet — real port-scan or Simulate buttons only</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#546E7A;padding:20px;">No alerts yet</td></tr>';
+      document.getElementById('last-rule').textContent = '';
     } else {
       alerts.slice(0, 100).forEach(a => tbody.appendChild(renderAlertRow(a)));
+      const latest = alerts[0];
+      document.getElementById('last-rule').textContent = latest && latest.fuzzy_rule ? latest.fuzzy_rule : '';
     }
   } catch (e) {
     console.warn('Snapshot refresh failed', e);
   }
 }
 
-// Clock
-setInterval(() => {
-  document.getElementById('clock').textContent =
-    new Date().toLocaleTimeString();
-}, 1000);
+function updateTsharkStatusEl(active, stats) {
+  const el = document.getElementById('tshark-status');
+  if (active) {
+    const pkts = (stats && stats.packets) ? stats.packets : 0;
+    const flows = (stats && stats.flows) ? stats.flows : 0;
+    el.textContent = `Wi-Fi capture on (${pkts} pkts, ${flows} flows)`;
+    el.style.color = '#43A047';
+  } else {
+    el.textContent = 'Wi-Fi capture off';
+    el.style.color = '#90A4AE';
+  }
+}
 
-// Init node grid
-function initNodes(trustScores, quarantined) {
-  const grid = document.getElementById('node-grid');
-  grid.innerHTML = '';
-  trustScores.forEach((t, i) => {
-    const isQ   = quarantined.includes(i);
-    const tPct  = Math.round(t * 100);
-    const color = t > 0.6 ? '#43A047' : t > 0.3 ? '#FB8C00' : '#E53935';
-    const cls   = t > 0.6 ? 'trust-green' : t > 0.3 ? 'trust-yellow' : 'trust-red';
-    grid.innerHTML += `
-      <div class="node-card" id="node-${i}">
-        <div class="node-id">Node ${i}</div>
-        <div class="trust-val ${cls}">${tPct}%</div>
-        <div class="trust-bar-bg">
-          <div class="trust-bar" style="width:${tPct}%;background:${color};"></div>
-        </div>
-        ${isQ ? '<span class="quarantine-badge">⚠ QUARANTINED</span>' : ''}
-      </div>`;
+function renderBlocked() {
+  const el = document.getElementById('blocked-list');
+  if (Object.keys(blockedIPs).length === 0) {
+    el.innerHTML = '<div style="color:#546E7A;text-align:center;padding:20px;">No IPs blocked</div>';
+    return;
+  }
+  el.innerHTML = Object.entries(blockedIPs).map(([ip, d]) => `
+    <div class="blocked-entry">
+      <div>
+        <span class="ip">${ip}</span>
+        <span style="color:#90A4AE;font-size:10px;display:block">${d.attack_type} — ${(d.confidence*100).toFixed(1)}%</span>
+      </div>
+      <button class="unblock-btn" onclick="unblockIP('${ip}')">Unblock</button>
+    </div>`).join('');
+}
+
+function loadModel() {
+  fetch('/api/load_model', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ dataset: 'bot_iot', n_classes: 5 })
+  }).then(r => r.json()).then(d => alert(d.message));
+}
+
+function unblockIP(ip) {
+  fetch('/api/unblock/' + ip, { method: 'POST', headers: authHeaders() });
+}
+
+function unblockAll() {
+  fetch('/api/unblock_all', { method: 'POST', headers: authHeaders() });
+}
+
+function startTsharkIngest() {
+  fetch('/api/capture/tshark/start', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({})
+  }).then(r => r.json()).then(d => {
+    alert(d.message || d.status);
+    refreshSnapshot();
+    refreshTraffic();
   });
 }
 
-// Socket events
-socket.on('connect', () => console.log('Dashboard connected'));
+function stopTsharkIngest() {
+  fetch('/api/capture/tshark/stop', {
+    method: 'POST',
+    headers: authHeaders()
+  }).then(r => r.json()).then(d => alert(d.message || d.status));
+}
+
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+}, 1000);
+
 socket.on('connect', () => refreshSnapshot());
 
 socket.on('initial_state', d => {
-  initNodes(d.trust_scores || [], d.quarantined || []);
-  document.getElementById('fl-round-val').textContent      = d.fl_round || 0;
-  document.getElementById('fl-round-display').textContent  = d.fl_round || 0;
   if (d.model_loaded) {
-    document.getElementById('model-status').textContent = '✅ Model Loaded';
+    document.getElementById('model-status').textContent = 'Model loaded';
     document.getElementById('model-status').style.color = '#43A047';
   }
-  if (d.capture_active) {
-    document.getElementById('capture-status').textContent =
-      `📡 Capture Active (${d.capture_interface || 'default'})`;
-    document.getElementById('capture-status').style.color = '#43A047';
-  }
-  if (d.tshark_active) {
-    updateTsharkStatusEl(true, d.tshark_stats);
-  }
+  if (d.tshark_active) updateTsharkStatusEl(true, d.tshark_stats);
 });
 
 socket.on('new_alert', alert => {
   alertCount++;
-  document.getElementById('stat-alerts').textContent  = alertCount;
-  const row = renderAlertRow(alert);
-
+  document.getElementById('stat-alerts').textContent = alertCount;
   const tbody = document.getElementById('alert-tbody');
-  // Clear placeholder
   if (tbody.querySelector('td[colspan]')) tbody.innerHTML = '';
+  const row = renderAlertRow(alert);
   tbody.prepend(row);
-
-  // Show fuzzy rule
-  if (alert.fuzzy_rule) {
-    document.getElementById('last-rule').textContent = alert.fuzzy_rule;
-  }
-
-  // Flash row
-  row.style.background = 'rgba(229,57,53,0.3)';
-  setTimeout(() => { row.style.background = ''; }, 800);
+  if (alert.fuzzy_rule) document.getElementById('last-rule').textContent = alert.fuzzy_rule;
 });
 
 socket.on('ip_blocked', d => {
@@ -596,49 +513,14 @@ socket.on('all_unblocked', () => {
   document.getElementById('stat-blocked').textContent = 0;
 });
 
-socket.on('fl_update', d => {
-  document.getElementById('fl-round-val').textContent     = d.round;
-  document.getElementById('fl-round-display').textContent = d.round;
-  if (d.avg_f1) {
-    const f1str = (d.avg_f1).toFixed(4);
-    document.getElementById('fl-f1-val').textContent     = f1str;
-    document.getElementById('fl-f1-display').textContent = f1str;
-  }
-  if (d.trust_scores) initNodes(d.trust_scores, d.quarantined || []);
-  if (d.drift_nodes && d.drift_nodes.length > 0) {
-    document.getElementById('drift-nodes').textContent =
-      '⚡ Drift detected on nodes: ' + d.drift_nodes.join(', ');
-  }
-  if (d.quarantined && d.quarantined.length > 0) {
-    document.getElementById('quarantine-nodes').textContent =
-      '⚠ Quarantined nodes: ' + d.quarantined.join(', ');
-  }
-});
-
-socket.on('monitoring_status', d => {
-  const dot    = document.getElementById('monitor-dot');
-  const status = document.getElementById('monitor-status');
-  if (d.active) {
-    dot.className    = 'status-dot dot-yellow';
-    status.textContent = d.demo_only ? 'Demo Monitoring (synthetic)' : 'Monitoring Active';
-  } else {
-    dot.className    = 'status-dot dot-red';
-    status.textContent = 'Monitoring Inactive';
-  }
-  fetch('/api/status').then(r => r.json()).then(updateCaptureBanner).catch(() => {});
-});
-
 socket.on('flow_stats', d => {
   document.getElementById('stat-flows').textContent = d.flows_seen;
-  // Attack distribution
   const dist = d.attack_dist || {};
   const html = Object.entries(dist)
-    .sort((a,b) => b[1]-a[1])
+    .sort((a, b) => b[1] - a[1])
     .map(([name, count]) =>
-      `<div style="display:flex;justify-content:space-between;padding:3px 0;
-                   border-bottom:1px solid #1a2d4a;">
-         <span>${name}</span>
-         <span style="color:#1E88E5;font-weight:bold;">${count}</span>
+      `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #1a2d4a;">
+         <span>${name}</span><span style="color:#1E88E5;font-weight:bold;">${count}</span>
        </div>`)
     .join('');
   document.getElementById('attack-dist').innerHTML = html || '<div style="color:#546E7A">No attacks yet</div>';
@@ -646,142 +528,29 @@ socket.on('flow_stats', d => {
 
 socket.on('model_status', d => {
   if (d.loaded) {
-    document.getElementById('model-status').textContent = '✅ Model Loaded';
+    document.getElementById('model-status').textContent = 'Model loaded';
     document.getElementById('model-status').style.color = '#43A047';
   }
 });
 
-socket.on('capture_status', d => {
-  const el = document.getElementById('capture-status');
-  if (d.active) {
-    el.textContent = `📡 Capture Active (${d.interface || 'default'})`;
-    el.style.color = '#43A047';
-  } else {
-    el.textContent = 'Capture Inactive';
-    el.style.color = '#90A4AE';
-  }
-});
-
-function updateTsharkStatusEl(active, stats) {
-  const el = document.getElementById('tshark-status');
-  if (active) {
-    const pkts = (stats && stats.packets) ? stats.packets : 0;
-    const flows = (stats && stats.flows) ? stats.flows : 0;
-    el.textContent = `WiFi tshark Active | ${pkts} pkts, ${flows} flows`;
-    el.style.color = '#43A047';
-  } else {
-    el.textContent = 'WiFi tshark Inactive';
-    el.style.color = '#90A4AE';
-  }
-}
-
 socket.on('tshark_status', d => {
   updateTsharkStatusEl(d.active, d.stats);
-  if (d.message) console.log('[tshark]', d.message);
-  if (d.stopped_demo_monitoring) {
-    document.getElementById('monitor-dot').className = 'status-dot dot-red';
-    document.getElementById('monitor-status').textContent = 'Monitoring Inactive';
-  }
-  fetch('/api/status').then(r => r.json()).then(updateCaptureBanner).catch(() => {});
+  fetch('/api/status').then(r => r.json()).then(s => {
+    updateStatsFromStatus(s);
+    updateCaptureBanner(s);
+  }).catch(() => {});
 });
 
 socket.on('traffic_packet', row => {
-  prependTrafficRow(row);
-  fetch('/api/status').then(r => r.json()).then(updateCaptureBanner).catch(() => {});
+  upsertTrafficRow(row);
+  fetch('/api/status').then(r => r.json()).then(s => {
+    updateStatsFromStatus(s);
+    updateCaptureBanner(s);
+  }).catch(() => {});
 });
+
 socket.on('traffic_detection', d => applyTrafficDetection(d));
 
-// Render blocked IPs
-function renderBlocked() {
-  const el = document.getElementById('blocked-list');
-  if (Object.keys(blockedIPs).length === 0) {
-    el.innerHTML = '<div style="color:#546E7A;text-align:center;padding:20px;">No IPs blocked</div>';
-    return;
-  }
-  el.innerHTML = Object.entries(blockedIPs).map(([ip, d]) => `
-    <div class="blocked-entry">
-      <div>
-        <span class="ip">${ip}</span>
-        <span style="color:#90A4AE;font-size:10px;display:block">${d.attack_type} — ${(d.confidence*100).toFixed(1)}%</span>
-      </div>
-      <button class="unblock-btn" onclick="unblockIP('${ip}')">Unblock</button>
-    </div>`).join('');
-}
-
-// Actions
-function startMonitoring() {
-  const apiKey = document.getElementById('api-key-input').value.trim();
-  socket.emit('start_monitoring', { api_key: apiKey });
-}
-function stopMonitoring() {
-  const apiKey = document.getElementById('api-key-input').value.trim();
-  socket.emit('stop_monitoring', { api_key: apiKey });
-}
-
-function loadModel() {
-  fetch('/api/load_model', {
-    method:'POST', headers: authHeaders(),
-    body: JSON.stringify({dataset:'bot_iot', n_classes:5})
-  }).then(r=>r.json()).then(d => alert(d.message));
-}
-
-function simulateAttack(type) {
-  fetch('/api/simulate_attack', {
-    method:'POST', headers: authHeaders(),
-    body: JSON.stringify({type, src_ip:'192.168.1.' + Math.floor(Math.random()*200+10)})
-  });
-}
-
-function unblockIP(ip) {
-  fetch('/api/unblock/' + ip, {method:'POST', headers: authHeaders()});
-}
-
-function unblockAll() {
-  fetch('/api/unblock_all', {method:'POST', headers: authHeaders()});
-}
-
-function startLiveCapture() {
-  const iface = document.getElementById('capture-iface-input').value.trim();
-  fetch('/api/capture/start', {
-    method:'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ interface: iface || null, count: 0 })
-  }).then(r => r.json()).then(d => alert(d.message || d.status));
-}
-
-function stopLiveCapture() {
-  fetch('/api/capture/stop', {
-    method:'POST',
-    headers: authHeaders()
-  }).then(r => r.json()).then(d => alert(d.message || d.status));
-}
-
-function startTsharkIngest() {
-  fetch('/api/capture/tshark/start', {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({})
-  }).then(r => r.json()).then(d => {
-    alert(d.message || d.status);
-    if (d.stopped_demo_monitoring) {
-      document.getElementById('monitor-dot').className = 'status-dot dot-red';
-      document.getElementById('monitor-status').textContent = 'Monitoring Inactive';
-    }
-    refreshSnapshot();
-    refreshTraffic();
-    document.getElementById('live-traffic-anchor').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-}
-
-function stopTsharkIngest() {
-  fetch('/api/capture/tshark/stop', {
-    method: 'POST',
-    headers: authHeaders()
-  }).then(r => r.json()).then(d => alert(d.message || d.status));
-}
-
-// Init nodes on load
-initNodes(Array(9).fill(0.5), []);
 setInterval(refreshSnapshot, 3000);
 setInterval(refreshTraffic, 1000);
 refreshSnapshot();

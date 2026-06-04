@@ -22,9 +22,8 @@ Open `http://localhost:5000` and hard-refresh (`Ctrl+Shift+R`).
 
 ## 2) Operator UI setup
 
-- Enter API key: `demo-key`
-- Click **Load Model**
-- Do **not** rely on **Start Monitoring** for real traffic (synthetic demo only)
+- Click **Load model**
+- Click **Start Wi-Fi capture** (after Windows tshark script is running)
 
 ---
 
@@ -69,19 +68,9 @@ curl -X POST http://127.0.0.1:5000/api/capture/tshark/upload \
 
 ---
 
-## 4) Live capture rehearsal (native Linux NIC only)
+## 4) Response action rehearsal
 
-- Set interface in UI (e.g. `eth0`)
-- Click **Start Live Capture** (requires `sudo` / capabilities on the interface)
-- Confirm **Flows Analysed** and **Live Traffic** update
-
-WSL `eth0` is **not** Windows Wi-Fi — use Section 3 for laptop Wi-Fi.
-
----
-
-## 5) Response action rehearsal
-
-- Trigger **Simulate PortScan** at least once
+- Teammate runs `nmap -sS <your-wifi-ip>` toward your laptop
 - Verify alert in **Live Alert Feed** (Destination / Protocol / Length when from real capture)
 - Verify **Blocked IPs** when confidence > 95%
 - **Unblock** single IP and **Unblock All**
@@ -117,10 +106,9 @@ Save JSON for viva audit trail.
 
 - [ ] Model loaded (green **Model Loaded**)
 - [ ] Windows tshark running OR PCAP uploaded
-- [ ] **Start WiFi Capture (tshark)** active
+- [ ] **Start Wi-Fi capture** active (top bar: Wi-Fi capture on)
 - [ ] Live Traffic rows match Wireshark for same moment
-- [ ] Simulate attack works if live attack demo needed
-- [ ] (Optional) Real `nmap -sS` triggers **PortScan (nmap suspected)** on live capture
+- [ ] Real `nmap -sS` triggers **PortScan (nmap suspected)** when teammate scans your IP
 - [ ] `GET /api/export_log` saved
 
 ---

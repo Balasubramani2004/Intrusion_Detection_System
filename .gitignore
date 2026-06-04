@@ -1,4 +1,5 @@
 # ── Python ──────────────────────────────────────────────────
+.pytest_cache/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -21,7 +22,8 @@ ENV/
 # ── Model weights & results ──────────────────────────────────
 saved_models/
 results/
-logs/
+logs/*
+!logs/.gitkeep
 *.h5
 *.weights.h5
 *.pkl

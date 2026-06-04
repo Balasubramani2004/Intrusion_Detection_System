@@ -31,9 +31,15 @@ from config import (
     SCAN_ALERT_COOLDOWN_SEC, SCAN_HEURISTIC_THRESHOLD, SCAN_EXCLUDE_PORTS,
     LAN_ARP_SWEEP_ENABLED, LAN_ARP_WINDOW_SEC, LAN_ARP_MIN_HOSTS, LAN_ARP_COOLDOWN_SEC,
     LIVE_ALERT_MODE, LIVE_ML_ALERT_CONFIDENCE, PROBE_CLASS_ID,
+    LOCAL_IP_WHITELIST, DONT_AUTO_BLOCK_LOCAL_IPS,
+    LAN_SCAN_VICTIM_ALERT_ONLY,
 )
 from capture.scan_detector import ScanTracker, ArpScanTracker
-from capture.network_utils import get_local_ipv4_addresses
+from capture.network_utils import (
+    get_local_ipv4_addresses,
+    get_windows_wifi_ipv4_addresses,
+    merge_local_ips,
+)
 
 logger = logging.getLogger("dashboard")
 logging.basicConfig(level=logging.INFO)
@@ -55,31 +61,20 @@ socketio = SocketIO(app, cors_allowed_origins=_allowed_origins, async_mode='even
 STATE = {
     'model':           None,
     'scaler':          None,
-    'is_monitoring':   False,
     'alert_count':     0,
-    'fl_round':        0,
-    'trust_scores':    [0.5] * 9,
-    'quarantined':     [],
-    'drift_nodes':     [],
     'recent_alerts':   deque(maxlen=200),
     'blocked_ips':     {},
     'n_flows_seen':    0,
     'n_attacks_seen':  0,
     'attack_counts':   {},
-    'fl_history':      [],
-    'capture_active':  False,
-    'capture_interface': None,
     'tshark_active':   False,
     'tshark_stats':    {},
     'traffic_log':     deque(maxlen=1000),
     'packet_no':       0,
     'last_packet_at':  None,
+    'last_packet_epoch': None,
     'local_ips':       set(),
     'lan_scan_packets': 0,
-}
-_capture_runtime = {
-    "capture": None,
-    "thread": None,
 }
 _tshark_runtime = {
     "ingest": None,
@@ -125,13 +120,62 @@ _LAN_ARP_ON = os.getenv("LAN_ARP_SWEEP_ENABLED", str(LAN_ARP_SWEEP_ENABLED)).low
 _LIVE_ALERT_MODE = os.getenv("LIVE_ALERT_MODE", LIVE_ALERT_MODE).strip().lower()
 _LIVE_ML_CONF = float(os.getenv("LIVE_ML_ALERT_CONFIDENCE", str(LIVE_ML_ALERT_CONFIDENCE)))
 _LAN_CHECK_EVERY_N_PACKETS = 25
+_LAN_VICTIM_ALERT_ONLY = os.getenv(
+    "LAN_SCAN_VICTIM_ALERT_ONLY", str(LAN_SCAN_VICTIM_ALERT_ONLY)
+).strip().lower() in ("1", "true", "yes")
+_LOCAL_IP_REFRESH_SEC = float(os.getenv("LOCAL_IP_REFRESH_SEC", "90"))
+_last_local_ip_refresh = 0.0
+
+
+def _parse_local_ip_whitelist() -> set:
+    extra = os.getenv("DASHBOARD_LOCAL_IPS", "").strip()
+    ips = {ip.strip() for ip in LOCAL_IP_WHITELIST if str(ip).strip()}
+    if extra:
+        ips.update(ip.strip() for ip in extra.split(",") if ip.strip())
+    return ips
 
 
 def _refresh_local_ips():
-    ips = get_local_ipv4_addresses()
+    ips = merge_local_ips(
+        get_local_ipv4_addresses(),
+        _parse_local_ip_whitelist(),
+        windows_wifi=get_windows_wifi_ipv4_addresses(),
+    )
     STATE["local_ips"] = ips
     _scan_tracker.set_local_ips(ips)
+    _unblock_whitelisted_ips()
     logger.info("LAN scan monitor: local IPs %s", sorted(ips) if ips else "(none detected)")
+    return ips
+
+
+def _maybe_refresh_local_ips(force: bool = False):
+    """Re-detect Windows Wi-Fi IP (DHCP changes; WSL PATH may miss powershell.exe)."""
+    global _last_local_ip_refresh
+    now = time.time()
+    if not force and (now - _last_local_ip_refresh) < _LOCAL_IP_REFRESH_SEC:
+        return
+    _last_local_ip_refresh = now
+    before = set(STATE.get("local_ips", ()))
+    after = _refresh_local_ips()
+    if after != before:
+        logger.info("Local IPs changed %s -> %s", sorted(before), sorted(after))
+
+
+def _is_local_ip(ip: str) -> bool:
+    return bool(ip) and ip in STATE.get("local_ips", set())
+
+
+def _unblock_whitelisted_ips():
+    """Remove auto-blocks on this laptop's IP(s) after whitelist refresh."""
+    for ip in list(STATE["blocked_ips"]):
+        if _is_local_ip(ip):
+            del STATE["blocked_ips"][ip]
+            socketio.emit("ip_unblocked", {"ip": ip})
+
+
+def _utc_now_fields() -> tuple[str, float]:
+    now = datetime.now(timezone.utc)
+    return now.isoformat().replace("+00:00", "Z"), now.timestamp()
 
 
 def _candidate_weight_paths(dataset):
@@ -201,6 +245,20 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/api/refresh_local_ips', methods=['POST'])
+def refresh_local_ips_api():
+    """Re-detect this laptop's Wi-Fi IP (WSL + Windows). Requires API key if configured."""
+    unauthorized = _require_api_key()
+    if unauthorized:
+        return unauthorized
+    _maybe_refresh_local_ips(force=True)
+    return jsonify({
+        "status": "ok",
+        "local_ips": sorted(STATE.get("local_ips", [])),
+        "lan_scan_victim_only": _LAN_VICTIM_ALERT_ONLY,
+    })
+
+
 @app.route('/api/status')
 def status():
     ingest = _tshark_runtime.get("ingest")
@@ -210,21 +268,18 @@ def status():
     stale_msg = tstats.get("stale_message")
     incoming_files = tstats.get("incoming_files", [])
     return jsonify({
-        'monitoring':     STATE['is_monitoring'],
         'model_loaded':   STATE['model'] is not None,
-        'fl_round':       STATE['fl_round'],
-        'trust_scores':   STATE['trust_scores'],
-        'quarantined':    STATE['quarantined'],
         'alert_count':    STATE['alert_count'],
         'flows_seen':     STATE['n_flows_seen'],
+        'tshark_flows':   tstats.get('flows', 0),
+        'tshark_packets': tstats.get('packets', 0),
         'attacks_seen':   STATE['n_attacks_seen'],
         'tshark_active':  STATE['tshark_active'],
-        'capture_active': STATE['capture_active'],
-        'capture_interface': STATE.get('capture_interface'),
         'tshark_stats':   tstats,
         'traffic_packets': len(STATE['traffic_log']),
         'packet_no':      STATE['packet_no'],
         'last_packet_at': STATE.get('last_packet_at'),
+        'last_packet_epoch': STATE.get('last_packet_epoch'),
         'tshark_stale_message': stale_msg,
         'tshark_incoming_files': incoming_files,
         'scan_detection_active': True,
@@ -232,6 +287,7 @@ def status():
         'lan_scan_enabled': _LAN_SCAN_ON,
         'local_ips': sorted(STATE.get("local_ips", [])),
         'scan_burst_sec': SCAN_BURST_WINDOW_SEC,
+        'lan_scan_victim_only': _LAN_VICTIM_ALERT_ONLY,
     })
 
 
@@ -300,24 +356,6 @@ def load_model_api():
         return jsonify({'status': 'error', 'message': str(e)})
 
 
-@app.route('/api/simulate_attack', methods=['POST'])
-def simulate_attack():
-    """
-    Inject a simulated attack flow for live demo.
-    Generates synthetic flow features and runs inference.
-    """
-    unauthorized = _require_api_key()
-    if unauthorized:
-        return unauthorized
-    data        = request.json or {}
-    attack_type = data.get('type', 'PortScan')
-    src_ip      = data.get('src_ip', '192.168.1.100')
-
-    flow = _generate_synthetic_flow(attack_type)
-    _process_flow(flow, src_ip=src_ip, force_attack=True)
-    return jsonify({'status': 'ok', 'message': f'Simulated {attack_type}'})
-
-
 @app.route('/api/update_fl_round', methods=['POST'])
 def update_fl_round():
     """Called by training script to push FL round updates to dashboard."""
@@ -333,7 +371,11 @@ def update_fl_round():
 def get_traffic():
     """Wireshark-style packet rows plus IDS detection columns."""
     limit = min(int(request.args.get('limit', 200)), 1000)
-    rows = list(STATE['traffic_log'])[:limit]
+    rows = sorted(
+        list(STATE['traffic_log'])[:limit],
+        key=lambda r: (float(r.get("time_epoch") or 0), int(r.get("no") or 0)),
+        reverse=True,
+    )
     return jsonify({
         'packets': rows,
         'total_buffered': len(STATE['traffic_log']),
@@ -350,76 +392,8 @@ def export_log():
         'total_attacks':  STATE['n_attacks_seen'],
         'alerts':         list(STATE['recent_alerts']),
         'blocked_ips':    STATE['blocked_ips'],
-        'fl_history':     STATE['fl_history'],
     }
     return jsonify(log)
-
-
-@app.route('/api/capture/start', methods=['POST'])
-def start_capture():
-    unauthorized = _require_api_key()
-    if unauthorized:
-        return unauthorized
-    data = request.json or {}
-    interface = data.get("interface")
-    packet_count = int(data.get("count", 0))
-
-    if STATE["capture_active"]:
-        return jsonify({"status": "ok", "message": "Capture already running"})
-
-    try:
-        from capture.live_capture import LiveCapture
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"Capture import failed: {e}"}), 500
-
-    on_packet, on_flow = _make_capture_callbacks()
-
-    capture = LiveCapture(
-        interface=interface,
-        on_alert_callback=on_flow,
-        on_packet_callback=on_packet,
-    )
-    def _run_capture():
-        try:
-            capture.start(interface=interface, packet_count=packet_count)
-        finally:
-            STATE["capture_active"] = False
-            socketio.emit("capture_status", {
-                "active": False,
-                "interface": STATE.get("capture_interface"),
-            })
-            _capture_runtime["capture"] = None
-            _capture_runtime["thread"] = None
-
-    thread = threading.Thread(target=_run_capture, daemon=True)
-    _capture_runtime["capture"] = capture
-    _capture_runtime["thread"] = thread
-    STATE["capture_active"] = True
-    STATE["capture_interface"] = interface or "default"
-    thread.start()
-    socketio.emit("capture_status", {"active": True, "interface": STATE["capture_interface"]})
-    return jsonify({
-        "status": "ok",
-        "message": f"Live capture started on {STATE['capture_interface']}",
-    })
-
-
-@app.route('/api/capture/stop', methods=['POST'])
-def stop_capture():
-    unauthorized = _require_api_key()
-    if unauthorized:
-        return unauthorized
-    capture = _capture_runtime.get("capture")
-    if capture is not None:
-        try:
-            capture.stop()
-        except Exception:
-            logger.exception("Failed to stop live capture cleanly")
-    _capture_runtime["capture"] = None
-    _capture_runtime["thread"] = None
-    STATE["capture_active"] = False
-    socketio.emit("capture_status", {"active": False, "interface": STATE.get("capture_interface")})
-    return jsonify({"status": "ok", "message": "Live capture stop requested"})
 
 
 @app.route('/api/capture/tshark/status', methods=['GET'])
@@ -443,7 +417,6 @@ def start_tshark_ingest():
     if STATE["tshark_active"]:
         return jsonify({"status": "ok", "message": "tshark ingest already running"})
 
-    stopped_demo = _stop_demo_monitoring()
     _refresh_local_ips()
     STATE["lan_scan_packets"] = 0
 
@@ -486,20 +459,16 @@ def start_tshark_ingest():
     _tshark_runtime["thread"] = thread
     STATE["tshark_active"] = True
     thread.start()
-    msg = "tshark ingest watching {incoming}. Demo monitoring stopped.".format(incoming=incoming)
-    if stopped_demo:
-        msg += " Use Windows start_wifi_tshark_windows.ps1 for real Wi-Fi packets."
+    msg = f"Watching {incoming} — run start_wifi_tshark_windows.ps1 on Windows for Wi-Fi packets."
     socketio.emit("tshark_status", {
         "active": True,
         "incoming_dir": str(ingest.incoming_dir),
         "message": msg,
-        "stopped_demo_monitoring": stopped_demo,
     })
     return jsonify({
         "status": "ok",
         "message": msg,
         "incoming_dir": incoming,
-        "stopped_demo_monitoring": stopped_demo,
     })
 
 
@@ -553,45 +522,11 @@ def upload_tshark_pcap():
 
 # ── SocketIO Events ─────────────────────────────────────────
 
-@socketio.on('start_monitoring')
-def handle_start_monitoring(data):
-    if not _api_key or (data or {}).get("api_key", "").strip() != _api_key:
-        emit('monitoring_status', {'active': False, 'error': 'unauthorized'})
-        return
-    if not STATE['is_monitoring']:
-        STATE['is_monitoring'] = True
-        thread = threading.Thread(
-            target=_monitoring_loop, daemon=True
-        )
-        thread.start()
-        emit('monitoring_status', {
-            'active': True,
-            'demo_only': True,
-            'message': 'Demo mode: synthetic flows only. No Protocol/Destination/Length. Use Start WiFi Capture (tshark) for real Wi-Fi.',
-        })
-        print("[Dashboard] Demo monitoring started (no alerts; use tshark for real traffic)")
-
-
-@socketio.on('stop_monitoring')
-def handle_stop_monitoring(data):
-    if not _api_key or (data or {}).get("api_key", "").strip() != _api_key:
-        emit('monitoring_status', {'active': STATE['is_monitoring'], 'error': 'unauthorized'})
-        return
-    STATE['is_monitoring'] = False
-    emit('monitoring_status', {'active': False})
-    print("[Dashboard] Monitoring stopped")
-
-
 @socketio.on('connect')
 def handle_connect():
     emit('initial_state', {
-        'trust_scores':  STATE['trust_scores'],
-        'quarantined':   STATE['quarantined'],
-        'fl_round':      STATE['fl_round'],
         'alert_count':   STATE['alert_count'],
         'model_loaded':  STATE['model'] is not None,
-        'capture_active': STATE['capture_active'],
-        'capture_interface': STATE['capture_interface'],
         'tshark_active': STATE['tshark_active'],
         'tshark_stats': STATE.get('tshark_stats', {}),
     })
@@ -656,7 +591,11 @@ def _record_scan_from_flow(flow_meta: dict) -> dict:
         return _scan_tracker.evaluate(src_ip)
     syn_count = int(flow_meta.get("syn_count") or 0)
     pkt_count = int(flow_meta.get("pkt_count") or 1)
-    is_syn = syn_count > 0
+    duration = float(flow_meta.get("duration") or 0.0)
+    # Skip normal TCP sessions (many packets / long-lived) — not nmap-style probes
+    if syn_count < 1 or pkt_count > 4 or (duration > 2.5 and pkt_count > 2):
+        return _scan_tracker.evaluate(src_ip)
+    is_syn = True
     _scan_tracker.record_flow(
         src_ip,
         dst_ip,
@@ -701,11 +640,12 @@ def _record_scan_from_packet(row: dict) -> None:
     _scan_tracker.record_packet_syn(src_ip, dst_ip, int(dst_port))
     STATE["lan_scan_packets"] = STATE.get("lan_scan_packets", 0) + 1
     if STATE["lan_scan_packets"] % _LAN_CHECK_EVERY_N_PACKETS == 0:
+        _maybe_refresh_local_ips()
         _check_lan_scans(scanner_hint=src_ip)
 
 
 def _fuse_attack_labels(scan_eval: dict, pred: int, ml_name: str, ml_conf: float,
-                        force_attack: bool, *, live_traffic: bool = False) -> tuple:
+                        *, live_traffic: bool = False) -> tuple:
     """Return (is_attack, display_name, confidence, detection_method, fuzzy_rule)."""
     rules_hit = bool(scan_eval.get("suspected"))
     if live_traffic:
@@ -716,9 +656,6 @@ def _fuse_attack_labels(scan_eval: dict, pred: int, ml_name: str, ml_conf: float
     if live_traffic and _LIVE_ALERT_MODE == "scan_only":
         ml_probe = False
         ml_other = False
-
-    if force_attack:
-        return True, ml_name, ml_conf, "demo", ""
 
     if rules_hit and ml_probe:
         conf = max(float(scan_eval.get("score", 0.0)), ml_conf)
@@ -760,9 +697,11 @@ def _emit_ids_alert(
     STATE["alert_count"] += 1
 
     sev = _severity(confidence)
+    ts_iso, ts_epoch = _utc_now_fields()
     alert = {
         "id": STATE["alert_count"],
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": ts_iso,
+        "timestamp_epoch": ts_epoch,
         "src_ip": src_ip,
         "attack_type": attack_type,
         "confidence": round(confidence, 4),
@@ -782,6 +721,8 @@ def _emit_ids_alert(
             alert["info"] = scan_evidence
 
     do_block = blocked_override if blocked_override is not None else confidence > 0.95
+    if DONT_AUTO_BLOCK_LOCAL_IPS and _is_local_ip(src_ip):
+        do_block = False
     if do_block and src_ip not in STATE["blocked_ips"]:
         STATE["blocked_ips"][src_ip] = {
             "blocked_at": datetime.now().isoformat(),
@@ -811,6 +752,9 @@ def _maybe_raise_scan_alert(
         return False
     victim_ip = scan_eval.get("dst_ip") or (flow_meta or {}).get("dst_ip", "")
     if not victim_ip or not _scan_tracker.can_alert(scanner_ip, victim_ip):
+        return False
+
+    if _LAN_VICTIM_ALERT_ONLY and not _is_local_ip(victim_ip):
         return False
 
     evidence = scan_eval.get("scan_evidence") or scan_eval.get("reason", "")
@@ -863,7 +807,18 @@ def _register_packet_row(row: dict):
     row['no'] = STATE['packet_no']
     row['source_tag'] = 'live'
     STATE['traffic_log'].appendleft(row)
-    STATE['last_packet_at'] = datetime.now(timezone.utc).isoformat()
+    epoch = row.get("time_epoch")
+    if epoch is not None:
+        try:
+            STATE["last_packet_epoch"] = float(epoch)
+            pkt_dt = datetime.fromtimestamp(STATE["last_packet_epoch"], tz=timezone.utc)
+            STATE["last_packet_at"] = pkt_dt.isoformat().replace("+00:00", "Z")
+        except (TypeError, ValueError, OSError):
+            ts_iso, _ = _utc_now_fields()
+            STATE["last_packet_at"] = ts_iso
+    else:
+        ts_iso, _ = _utc_now_fields()
+        STATE["last_packet_at"] = ts_iso
     socketio.emit('traffic_packet', row)
     if row.get("protocol") == "ARP":
         _record_arp_scan(row)
@@ -871,16 +826,6 @@ def _register_packet_row(row: dict):
             _check_lan_scans()
     else:
         _record_scan_from_packet(row)
-
-
-def _stop_demo_monitoring():
-    """Stop synthetic Start Monitoring when real capture begins."""
-    if not STATE['is_monitoring']:
-        return False
-    STATE['is_monitoring'] = False
-    socketio.emit('monitoring_status', {'active': False})
-    logger.info("Stopped demo monitoring for real capture")
-    return True
 
 
 def _flow_info_string(flow_meta: dict) -> str:
@@ -960,7 +905,6 @@ def _make_capture_callbacks():
         _process_flow(
             np.asarray(features, dtype=np.float32),
             src_ip=src_ip,
-            force_attack=False,
             min_packets=_MIN_FLOW_PKTS,
             flow_meta=flow_info,
             scan_eval=scan_eval,
@@ -969,32 +913,8 @@ def _make_capture_callbacks():
     return _on_packet, _on_flow
 
 
-def _monitoring_loop():
-    """
-    Main monitoring loop — simulates processing network flows.
-    In real deployment: replace with Scapy packet capture.
-    """
-    import random
-    attack_names_list = list(ATTACK_NAMES.values())
-
-    while STATE['is_monitoring']:
-        # Simulate a batch of network flows
-        n_flows = random.randint(3, 8)
-        for _ in range(n_flows):
-            # 90% benign, 10% attack (realistic ratio)
-            is_attack = random.random() < 0.10
-            flow = _generate_synthetic_flow(
-                'BENIGN' if not is_attack
-                else random.choice(attack_names_list[1:])
-            )
-            src_ip = f"192.168.{random.randint(1,9)}.{random.randint(1,254)}"
-            _process_flow(flow, src_ip=src_ip, raise_alerts=False)
-
-        time.sleep(1)
-
-
 def _process_flow(flow_features, src_ip="0.0.0.0",
-                   force_attack=False, min_packets=0, flow_meta=None,
+                   min_packets=0, flow_meta=None,
                    raise_alerts=True, scan_eval=None):
     """Process one network flow through the model and emit alert if needed."""
     if flow_meta and flow_meta.get('pkt_count', 0) < min_packets:
@@ -1038,43 +958,6 @@ def _process_flow(flow_features, src_ip="0.0.0.0",
         pred = int(np.argmax(probs))
         conf = float(np.max(probs))
         name = ATTACK_NAMES.get(pred, 'Unknown')
-        if force_attack:
-            if conf < 0.96:
-                conf = 0.99
-            is_attack = True
-            display_name = name
-            alert_conf = conf
-            method = "demo"
-            fused_rule = ml_rule = ""
-            try:
-                anfis = STATE['model'].get_layer('anfis')
-                rules = anfis.get_top_rule_for_sample()
-                fused_rule = rules[0] if rules else f"IF traffic_pattern IS ANOMALOUS THEN {name}"
-            except Exception:
-                fused_rule = f"IF traffic_pattern IS ANOMALOUS THEN {name}"
-            sev = _severity(alert_conf)
-            evidence = ""
-            if flow_meta:
-                _annotate_traffic_detection(
-                    flow_meta.get('src_ip', src_ip),
-                    flow_meta.get('dst_ip', ''),
-                    flow_meta.get('src_port'),
-                    flow_meta.get('dst_port'),
-                    display_name, alert_conf, sev, True,
-                )
-            if raise_alerts:
-                _emit_ids_alert(
-                    src_ip, display_name, alert_conf, fused_rule, flow_meta,
-                    detection_method=method,
-                )
-            if STATE['n_flows_seen'] % 10 == 0:
-                socketio.emit('flow_stats', {
-                    'flows_seen': STATE['n_flows_seen'],
-                    'attacks_seen': STATE['n_attacks_seen'],
-                    'attack_dist': STATE['attack_counts'],
-                })
-            return
-
         try:
             anfis = STATE['model'].get_layer('anfis')
             rules = anfis.get_top_rule_for_sample()
@@ -1083,7 +966,7 @@ def _process_flow(flow_features, src_ip="0.0.0.0",
             ml_rule = f"IF traffic_pattern IS ANOMALOUS THEN {name}"
 
         is_attack, display_name, alert_conf, method, fused_rule = _fuse_attack_labels(
-            scan_eval, pred, name, conf, False,
+            scan_eval, pred, name, conf,
             live_traffic=bool(flow_meta),
         )
 
@@ -1137,46 +1020,12 @@ def _process_flow(flow_features, src_ip="0.0.0.0",
 
 
 def _update_fl_state(data):
-    """Update dashboard with new FL round data from training script."""
-    if 'round' in data:
-        STATE['fl_round'] = data['round']
-    if 'trust_scores' in data:
-        STATE['trust_scores'] = data['trust_scores']
-    if 'quarantined' in data:
-        STATE['quarantined'] = data['quarantined']
-    if 'drift_nodes' in data:
-        STATE['drift_nodes'] = data['drift_nodes']
-    if 'avg_f1' in data:
-        STATE['fl_history'].append({
-            'round':  data.get('round', 0),
-            'avg_f1': data.get('avg_f1', 0),
-        })
-
-    socketio.emit('fl_update', {
-        'round':        STATE['fl_round'],
-        'trust_scores': STATE['trust_scores'],
-        'quarantined':  STATE['quarantined'],
-        'drift_nodes':  STATE['drift_nodes'],
-        'avg_f1':       data.get('avg_f1', 0),
-    })
-
-
-def _generate_synthetic_flow(attack_type='BENIGN'):
-    """Generate synthetic flow feature vector for demo."""
-    np.random.seed(None)
-    base = np.random.randn(NUM_FEATURES).astype(np.float32)
-
-    if attack_type in ('DDoS', 'DoS'):
-        base[0] *= 5    # high packet rate
-        base[1] *= 4    # high byte count
-        base[3] *= 3    # high SYN count
-    elif attack_type == 'PortScan':
-        base[4] *= 6    # many unique destination ports
-        base[5] *= 0.1  # very short connections
-    elif attack_type in ('Reconnaissance', 'Recon'):
-        base[2] *= 3
-        base[6] *= 4
-    return base
+    """Training script hook (FL metrics; no live dashboard UI)."""
+    logger.info(
+        "FL update from trainer: round=%s avg_f1=%s",
+        data.get("round"),
+        data.get("avg_f1"),
+    )
 
 
 def _severity(confidence):
@@ -1214,6 +1063,8 @@ if __name__ == '__main__':
                 break
             except Exception as e:
                 logger.warning("Auto-load skipped for %s: %s", wpath, e)
+
+    _refresh_local_ips()
 
     socketio.run(
         app,

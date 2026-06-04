@@ -161,13 +161,17 @@ $tsharkArgs = @(
     "-w", $outBase
 )
 
-# Promiscuous helps see other devices scanning on the same Wi-Fi (when AP allows it)
-$usePromisc = $Promiscuous -or (-not $NoPromiscuous)
-if ($usePromisc) {
-    Write-Host "Promiscuous mode: ON (see more LAN scan traffic between devices)"
-    $tsharkArgs = @("-o", "capture.promiscuous_mode:TRUE") + $tsharkArgs
+# Promiscuous helps see other devices scanning on the same Wi-Fi (when AP allows it).
+# tshark enables promiscuous capture by default; use -p to disable.
+# Do NOT use capture.promiscuous_mode (unknown on current Wireshark); use capture.prom_mode if needed.
+if ($NoPromiscuous) {
+    Write-Host "Promiscuous mode: OFF (-p; only traffic to/from this PC)"
+    $tsharkArgs = @("-p") + $tsharkArgs
 } else {
-    Write-Host "Promiscuous mode: OFF (only traffic to/from this PC)"
+    Write-Host "Promiscuous mode: ON (tshark default; more LAN traffic when AP allows)"
+    if ($Promiscuous) {
+        $tsharkArgs = @("-o", "capture.prom_mode:TRUE") + $tsharkArgs
+    }
 }
 
 & $tshark @tsharkArgs

@@ -24,45 +24,51 @@
 ## Project Structure
 ```
 fedaida_ids/
-├── config.py                  ← All hyperparameters (edit this first)
-├── train.py                   ← Main training entry point
+├── config.py              # Hyperparameters
+├── train.py               # Training entry point
 ├── requirements.txt
+├── pytest.ini
 │
-├── data/
-│   └── preprocess.py          ← Load, clean, SMOTE, Non-IID partition
-│
-├── model/
-│   └── fedaida_model.py       ← CNN + BiLSTM + Attention + ANFIS
-│
-├── federation/
-│   ├── client.py              ← Flower FL client per node
-│   ├── server.py              ← Flower FL server with IRBA
-│   └── irba.py                ← IRBA trust scoring (Novelty N4)
-│
-├── drift/
-│   └── adwin_detector.py      ← ADWIN concept drift (Novelty N3)
-│
-├── evaluation/
-│   └── metrics.py             ← F1, FPR, confusion matrix, ROC, plots
+├── capture/               # Live Wi-Fi / LAN detection
+│   ├── live_capture.py
+│   ├── tshark_ingest.py
+│   ├── scan_detector.py
+│   ├── network_utils.py
+│   ├── wireshark_view.py
+│   ├── incoming/          # Rolling PCAP chunks (gitignored)
+│   └── processed/
 │
 ├── dashboard/
-│   ├── app.py                 ← Flask + SocketIO real-time dashboard
-│   └── templates/index.html   ← Dashboard UI
+│   ├── app.py
+│   └── templates/
 │
-├── capture/
-│   └── live_capture.py        ← Live packet capture (Scapy)
+├── data/
+│   ├── preprocess.py
+│   └── pcap_to_flow.py
 │
-├── scripts/
-│   └── byzantine_test.py      ← Byzantine attack experiment
+├── model/
+│   ├── fedaida_model.py
+│   ├── attention.py
+│   └── anfis_layer.py
 │
-└── datasets/                  ← PUT YOUR DATASETS HERE
-    ├── nsl_kdd/
-    │   ├── KDDTrain+.txt       ← Download from UNB
-    │   └── KDDTest+.txt
-    ├── cicids2018/
-    │   └── *.csv               ← Download from CIC (CSE-CIC-IDS2018)
-    └── bot_iot/
-        └── *.csv               ← Download from UNSW
+├── federation/
+│   ├── client.py
+│   ├── server.py
+│   └── irba.py
+│
+├── drift/
+│   └── adwin_detector.py
+│
+├── evaluation/
+│   └── metrics.py
+│
+├── scripts/               # Shell helpers + experiments
+├── tests/
+├── docs/
+├── datasets/              # Download data here (see docs/datasets_download.md)
+├── saved_models/        # Weights + scaler (gitignored)
+├── results/             # Metrics + plots (gitignored)
+└── logs/                # Training logs (gitignored)
 ```
 
 ---
@@ -168,12 +174,10 @@ python3 dashboard/app.py
 
 1. **Windows (PowerShell Admin):** run `scripts/start_wifi_tshark_windows.ps1`
 2. **WSL:** start dashboard (above), enter API key, click **Load Model**
-3. Click **Start WiFi Capture (tshark)** — not "Start Monitoring" (synthetic demo only)
+3. Click **Start Wi-Fi capture**
 4. Compare **Live Traffic** table with Wireshark (Protocol, Destination, Length, Info)
 
 See `docs/wireshark_wifi_capture.md` for full workflow and troubleshooting.
-
-**Synthetic demo only:** click **Simulate PortScan / DDoS / Recon** after Load Model.
 
 ### Step 9 — Live Demo on College Network (Viva Day)
 
@@ -189,14 +193,7 @@ cd \\wsl$\Ubuntu\home\<user>\projects\IDS\fedaida_ids
 # WSL — dashboard + ingest
 export DASHBOARD_API_KEY=demo-key
 python3 dashboard/app.py
-# UI: Load Model → Start WiFi Capture (tshark)
-```
-
-**Option B — Native Linux capture (machine with NIC access):**
-
-```bash
-sudo python3 capture/live_capture.py --interface eth0
-# Dashboard: Start Live Capture (same API key workflow)
+# UI: Load Model → Start Wi-Fi capture
 ```
 
 **Attack simulation (second machine on LAN):**

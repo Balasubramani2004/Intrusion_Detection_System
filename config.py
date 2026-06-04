@@ -12,6 +12,7 @@ RESULTS_DIR  = os.path.join(BASE_DIR, "results")
 PLOTS_DIR    = os.path.join(BASE_DIR, "results/plots")
 METRICS_DIR  = os.path.join(BASE_DIR, "results/metrics")
 MODELS_DIR   = os.path.join(BASE_DIR, "saved_models")
+MODEL_DIR    = MODELS_DIR  # dashboard alias
 LOGS_DIR     = os.path.join(BASE_DIR, "logs")
 DATASET      = "nsl_kdd"
 NUM_FEATURES = 41
@@ -38,7 +39,6 @@ DRIFT_CHECK_INTERVAL = 50
 DRIFT_FL_ROUNDS      = 3
 CNN_FILTERS     = 64
 CNN_KERNEL      = 3
-CNN_KERNEL_SIZE = 3
 LSTM_UNITS      = 128
 ATTENTION_UNITS = 64
 ANFIS_RULES     = 20
@@ -49,11 +49,9 @@ LEARNING_RATE   = 0.001
 MAX_EPOCHS      = 50
 EARLY_STOPPING  = 10
 NUM_SEEDS         = 5
-NUM_CLASSES       = 5
 DASHBOARD_HOST    = "0.0.0.0"
 DASHBOARD_PORT    = 5000
 DASHBOARD_DEBUG   = False
-MODEL_DIR         = os.path.join(BASE_DIR, "saved_models")  # alias for MODELS_DIR
 CONFIDENCE_HIGH   = 0.90
 CONFIDENCE_MEDIUM = 0.70
 ALERT_CONFIDENCE_THRESHOLD = CONFIDENCE_MEDIUM
@@ -70,10 +68,18 @@ SCAN_LOCAL_BURST_MIN_PORTS = 6
 SCAN_ALERT_COOLDOWN_SEC = 40
 SCAN_HEURISTIC_THRESHOLD = 0.78
 SCAN_EXCLUDE_PORTS = frozenset({53, 80, 443, 8080, 8443, 993, 587, 22, 8000, 8888})
-LAN_ARP_SWEEP_ENABLED = True
+LAN_ARP_SWEEP_ENABLED = False
 LAN_ARP_WINDOW_SEC = 25
 LAN_ARP_MIN_HOSTS = 8
 LAN_ARP_COOLDOWN_SEC = 60
+# Extra laptop LAN IP(s) if auto-detect misses (college DHCP changes daily).
+# Leave empty when using WSL — Windows Wi-Fi IP is detected at dashboard start.
+# Or before each session: export DASHBOARD_LOCAL_IPS=10.10.x.x
+LOCAL_IP_WHITELIST = []
+DONT_AUTO_BLOCK_LOCAL_IPS = True
+# Wi-Fi demo: only alert when YOUR laptop is the scan target (victim), not when
+# you appear as "scanner" due to normal outbound TCP (browser, chat, etc.).
+LAN_SCAN_VICTIM_ALERT_ONLY = True
 # Live Wi-Fi: strict = port-scan rules only (no noisy ML DoS/R2L)
 LIVE_ALERT_MODE = "strict"
 LIVE_ML_ALERT_CONFIDENCE = 0.88
